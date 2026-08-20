@@ -1,8 +1,34 @@
-Person A — front-end + IR + feature extractor
-Lives entirely inside the parser layer: lexer → recursive-descent parser matching the grammar → AST → semantic checks (type-checking, array bounds, nominal struct matching) → lowering to three-address code. Second job, same territory: walk that same AST/IR to compute the feature vector (loop depth, basic block count, branch density, struct/array shape). Deliverable per program: a validated TAC dump + a feature row. Nobody else has real data to work against until this exists, so A's world is solitary and front-loaded — mostly A alone, testing by hand-deriving expected TAC from the canonical example (which maps directly onto what's already been drilled in BCSE307L).
-Person B — optimization passes + codegen
-Two connected halves, both operating on A's IR. Half one: the 5 toggleable passes (constant folding, DCE, CSE, LICM, strength reduction), each taking IR in and IR out. Half two: codegen — turning that IR into real C text, implementing the wrapper-struct trick for every array/struct/string so value semantics survive translation. B's built-in correctness check is powerful and worth stating explicitly: since these are meaning-preserving optimizations, every one of the 64 combos must produce the identical final output — only the timing should change. If combo #37 gives a different answer than the baseline, that's a bug in a pass, full stop. This becomes B's own regression suite before anyone else even measures speed.
-Person C — timing harness + ML model + demo
-The most full-stack world — touches everyone else's output. Builds the harness (compile with gcc -O0, run 15-20 times, median), automates it across all 64 combos × every benchmark program, merges A's features with the resulting timings into the training dataset, picks and trains the model (start simple — logistic regression or a small random forest, given the dataset will only be a couple thousand rows), then wires the whole recommendation demo end to end: new program → A's extractor → model → B's optimizer/codegen → compile → measured speedup. Mostly blocked until A, B, and D deliver real output, so C's early world should be building all of this against fake data first, exactly as planned earlier.
-Person D — benchmark corpus + correctness oracle + report philosophy
-Deliberately the most bounded, front/back-loaded world, built around the actual engagement pattern rather than against it. Two real jobs: write 20-30 MiniC programs covering every language feature with real computational weight (so timing differences are measurable, not startup noise), and for each one, hand-verify — or run through real gcc — the correct expected output. That output table isn't just D's job, it's the ground truth B checks the "all 64 combos agree" invariant against, and what C validates the harness against before trusting any timing number. Third job, well-suited to abstract thinking on a tight clock: the report's "why no pointers, why value semantics" section. A pre-seeds 8-10 programs early so the corpus has a floor regardless of D's timing, and someone drafts a placeholder outline for the report section so D's midnight pass is an upgrade, not a blocker.
+# MiniC Compiler Optimizer — Work Distribution & Role Specification
+
+### Person A — Front-End + IR Generator + Static Feature Extractor
+* **Scope:** Lexer $\rightarrow$ Recursive-descent parser (matching MiniC BNF grammar) $\rightarrow$ AST $\rightarrow$ Semantic analysis (type-checking, array dimension checks, lvalue checks, nominal struct matching) $\rightarrow$ Lowering to Three-Address Code (TAC).
+* **Feature Extraction:** Walks AST/TAC to compute the static feature vector for each program: loop count, max loop nesting depth, basic block count, branch density, instruction-type histogram, struct field count, array dimensionality.
+* **Deliverables:** Validated TAC dump + static feature dictionary (`dict`) per MiniC program.
+* **Testing:** Uses the canonical example program to verify front-end and IR correctness against hand-derived expected TAC.
+
+---
+
+### Person B — Optimization Passes + IR-to-C Codegen
+* **Scope:** 
+  1. **Optimization Pass Library (5 standalone toggleable passes):** Constant Folding, Dead Code Elimination (backward liveness), Common Subexpression Elimination (value numbering per basic block), Loop-Invariant Code Motion (hoisting to loop preheader), and Strength Reduction. 
+  2. **Pass Controller:** Configured via a 5-bit flag enabling any of the 64 optimization pass combinations.
+  3. **Codegen (IR $\rightarrow$ C):** Translates optimized TAC back into C text. Wraps every array, string, and struct in a 1-field C `struct` wrapper (e.g. `typedef struct { char data[6]; } str_6;`) to enforce MiniC value semantics. Lowers string literal assignments using C99 compound literals (e.g. `s = (str_6){ .data = "hello" };`).
+* **Correctness Check:** Every one of the 64 pass combinations MUST produce identical program output as the unoptimized baseline on every benchmark.
+
+---
+
+### Person C — Timing Harness + Dataset Assembly + ML Model + Demo Interface
+* **Scope:**
+  1. **Timing Harness:** Compiles emitted C code with `gcc -O0`, executes binaries 15–20 times (discarding initial warm-up runs), and records median wall-clock execution time (`time.perf_counter()`).
+  2. **Sweep Automation:** Sweeps all 64 optimization combinations across all 30–40 benchmark programs to generate the complete dataset (~2,000–2,500 rows).
+  3. **ML Model:** Trains a recommendation model (Random Forest / Gradient Boosted Trees). **Crucial Requirement:** Must use `GroupKFold` cross-validation grouped by `program_id` so rows from the same program do not leak across training and test splits.
+  4. **Recommendation Demo:** End-to-end pipeline CLI / UI (Streamlit): input MiniC file $\rightarrow$ extract features $\rightarrow$ predict best combo $\rightarrow$ optimize & codegen $\rightarrow$ compile & run $\rightarrow$ display measured speedup % against baseline and optimal combo.
+
+---
+
+### Person D — Benchmark Corpus + Correctness Oracle + Report Architecture
+* **Scope:**
+  1. **Benchmark Suite:** Writes **30–40 MiniC benchmark programs** covering 2D array traversals, struct arithmetic, fixed string processing, recursion, LICM-friendly loops, and strength-reduction loops.
+  2. **High Trip Counts:** Programs MUST feature high computational weight (thousands to millions of loop iterations) so runtime differences under `gcc -O0` exceed timing noise (>100ms per run).
+  3. **Ground Truth Oracle:** Provides equivalent standard C reference programs and hand-verified outputs to build an automated reference output table.
+  4. **Report & Documentation:** Authors report sections explaining MiniC design decisions (why pointers are omitted, alias analysis complexity, value semantics vs reference semantics).

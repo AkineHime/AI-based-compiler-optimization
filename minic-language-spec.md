@@ -74,10 +74,9 @@ arr_int_10;
 arr_int_10 scores;
 ```
 
-Because C structs (unlike raw arrays) are copied by value on assignment and on function call, this wrapper forces true copy semantics in the generated C. Whoever owns codegen must
+Because C structs (unlike raw arrays) are copied by value on assignment and on function call, this wrapper forces true copy semantics in the generated C. Whoever owns codegen must implement this for every array/string declaration, with no exceptions — otherwise every downstream optimization-correctness claim in the report is unsound.
 
-
-implement this for every array/string declaration, with no exceptions — otherwise every downstream optimization-correctness claim in the report is unsound.
+Note on String Literals in Codegen: Because strings are wrapped in structs (e.g. `typedef struct { char data[6]; } str_6;`), assigning string literals directly (e.g., `s = "hello";`) is invalid C syntax. Codegen must lower string literal assignments using C99 compound literals (e.g., `s = (str_6){ .data = "hello" };`) or `memcpy`/initializers.
 
 Practical trade-off worth a line in your limitations section: passing large arrays/structs to functions means a full copy each call. For a semester project's benchmark sizes this is fine, and it's the same trade- off real languages accept for soundness without alias analysis — it's part of why Rust's borrow checker exists, to get pointer-like efficiency without losing this guarantee.
 
@@ -95,7 +94,7 @@ array_suffix? ('=' expr)? ';'
 array_suffix → '[' INT_LIT ']' ('['
 INT_LIT ']')?
 type_spec → 'int' | 'float' | 'char'
-| IDENT // IDENT = struct name
+| 'struct'? IDENT // IDENT = struct name (allows optional 'struct' prefix)
 ```
 
 
