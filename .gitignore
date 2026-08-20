@@ -1,0 +1,42 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C / GCC build artifacts and binaries (from timing harness)
+*.o
+*.obj
+*.exe
+*.out
+*.dll
+*.so
+*.dylib
+temp_*.c
+temp_*.exe
+out.exe
+out
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Machine Learning / large runtime outputs (optional cache)
+*.log
+data/raw_measurements_temp/
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
