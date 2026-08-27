@@ -1,13 +1,31 @@
 # MiniC Compiler Optimizer — Team Continuation & Handoff Guide
 **Project:** AI-Based Compiler Optimization Recommendation System  
-**Current Milestone:** **Person A (Front-End & IR) and Person B (Optimizations & Codegen) are COMPLETE and VERIFIED.**  
-**Active Role:** **Person C (Timing Harness, Automated Sweeper, ML Recommendation Engine & Interactive Demo)** with **Person D (Benchmark Corpus & Ground Truth Oracle)**.
+**Current Milestone:** **Person A, B and a working Person C pipeline are COMPLETE and VERIFIED end to end.**  
+**Remaining:** Person D's fuller benchmark corpus (30-40 programs) drops into `benchmarks/` with no code change; optional Streamlit demo (CLI demo is done).
+
+### Measured result (see `RESULTS.md`, `docs/results.html`)
+
+30 benchmarks x 32 pass combos, emitted to C and compiled with `gcc -O0`:
+- **best combo per program: geomean x1.38 speedup, max x2.66**
+- ML recommender (RandomForest, GroupKFold by `program_id`): **x1.37 on held-out
+  programs, 85% of the x1.44 oracle**, speedup-prediction MAE 0.137
+- every one of the 960 timed configs reproduces the unoptimized baseline's output
 
 ---
 
-## 1. Current State of the Codebase (Person A & B Handoff)
+## 1. Current State of the Codebase
 
-The compiler frontend, intermediate representation, static feature extractor, 5-bit optimization engine, and C codegen are fully operational and covered by **34 passing unit/integration tests**.
+The compiler frontend, IR, static feature extractor, 32-combo optimization engine,
+C codegen, timing harness, 64-combo sweep, and ML recommender are operational and
+covered by **43 passing unit/integration tests** (`python -m pytest -q`).
+
+`src/minic/harness/` (compiler, timer, sweeper, report, ground_truth, plot),
+`src/minic/ml/` (dataset, model, train, predictor), `demo/cli.py`,
+`run_experiment.py`, `benchmarks/` (30 programs + `ground_truth.csv`). Person C
+notes: `PERSON_C_NOTES.md`.
+
+Note: 5 toggleable passes -> **32** distinct combinations. The "64" in older
+drafts double-counts an unused bit (ids 32..63 == 0..31); `NUM_COMBOS = 32`.
 
 ```
 src/minic/
