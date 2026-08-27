@@ -33,7 +33,11 @@ def constant_folding_pass(func: TACFunction, global_names: frozenset = frozenset
         # Step 1: Forward constant propagation and expression evaluation
         new_instructions: List[TACInstruction] = []
 
-        # Temp constants map (SSA-like temporaries)
+        # Temp constants are propagated across block boundaries on the assumption
+        # that a temp is single-assignment.  Strength reduction breaks that
+        # (its accumulator is written twice) -- exclude any multiply-defined
+        # temp so a stale seed value can't leak into a loop body.
+        multi_def = _multiply_defined(optimized_func.instructions)
         temp_constants: Dict[str, Constant] = {}
         # Block-local variable constants
         var_constants: Dict[str, Constant] = dict(immutable)
@@ -47,9 +51,9 @@ def constant_folding_pass(func: TACFunction, global_names: frozenset = frozenset
                 var_constants.update(immutable)
 
             # Substitute operands from known constants
-            src1 = _substitute_constant(inst.src1, temp_constants, var_constants)
-            src2 = _substitute_constant(inst.src2, temp_constants, var_constants)
-            src3 = _substitute_constant(inst.src3, temp_constants, var_constants)
+            src1 = _substitute_constant(inst.src1, temp_constants, var_constants, multi_def)
+            src2 = _substitute_constant(inst.src2, temp_constants, var_constants, multi_def)
+            src3 = _substitute_constant(inst.src3, temp_constants, var_constants, multi_def)
 
             if src1 != inst.src1 or src2 != inst.src2 or src3 != inst.src3:
                 changed = True
@@ -193,13 +197,25 @@ def _find_immutable_constants(instructions: List[TACInstruction],
     }
 
 
-def _substitute_constant(operand: Any, temp_constants: Dict[str, Constant], var_constants: Dict[str, Constant]) -> Any:
+def _multiply_defined(instructions: List[TACInstruction]) -> set:
+    counts: Dict[str, int] = {}
+    for inst in instructions:
+        if isinstance(inst.dst, (Var, Temp)) and inst.opcode not in (
+                Opcode.LABEL, Opcode.ALLOC_LOCAL, Opcode.COMMENT,
+                Opcode.JUMP, Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE):
+            n = str(inst.dst)
+            counts[n] = counts.get(n, 0) + 1
+    return {n for n, c in counts.items() if c > 1}
+
+
+def _substitute_constant(operand: Any, temp_constants: Dict[str, Constant],
+                         var_constants: Dict[str, Constant], multi_def: set = frozenset()) -> Any:
     if isinstance(operand, Temp):
         key = str(operand)
-        if key in temp_constants:
+        if key in temp_constants and key not in multi_def:
             return temp_constants[key]
     elif isinstance(operand, Var):
-        if operand.name in var_constants:
+        if operand.name in var_constants and operand.name not in multi_def:
             return var_constants[operand.name]
     return operand
 

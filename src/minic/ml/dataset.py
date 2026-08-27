@@ -1,6 +1,6 @@
 """Load the sweep CSV into an ML-ready design matrix.
 
-X = 19 static features + 5 flag bits ; y = speedup_ratio ; groups = program_id
+X = 19 static features + 6 pass-flag bits ; y = speedup_ratio ; groups = program_id
 (so GroupKFold can hold whole programs out).
 """
 import csv
@@ -8,9 +8,11 @@ from dataclasses import dataclass
 from typing import List, Tuple
 
 from ..features.extractor import FEATURE_NAMES
+from ..optimizer.pass_manager import PASS_ABBR
 
 FEATURE_COLUMNS = [f"f_{n}" for n in FEATURE_NAMES]
-FLAG_COLUMNS = ["flag_cf", "flag_dce", "flag_cse", "flag_licm", "flag_sr"]
+FLAG_COLUMNS = [f"flag_{ab.lower()}" for _bit, ab in sorted(PASS_ABBR.items())]
+FLAG_BITS = sorted(PASS_ABBR)   # [1, 2, 4, 8, 16, 32]
 X_COLUMNS = FEATURE_COLUMNS + FLAG_COLUMNS
 TARGET = "speedup_ratio"
 
@@ -50,12 +52,6 @@ def load_dataset(csv_path: str, drop_missing: bool = True) -> Dataset:
 
 def features_to_x(feature_dict: dict, combo_id: int) -> List[float]:
     """Build one design-matrix row for online prediction."""
-    flags = [
-        1.0 if combo_id & 1 else 0.0,
-        1.0 if combo_id & 2 else 0.0,
-        1.0 if combo_id & 4 else 0.0,
-        1.0 if combo_id & 8 else 0.0,
-        1.0 if combo_id & 16 else 0.0,
-    ]
     feats = [float(feature_dict[n]) for n in FEATURE_NAMES]
+    flags = [1.0 if combo_id & bit else 0.0 for bit in FLAG_BITS]
     return feats + flags

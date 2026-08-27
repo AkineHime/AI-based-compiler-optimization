@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MiniC Playground</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<style>
+  :root{
+    --ground:#fbfaf7; --surface:#f3f0ea; --surface-2:#ece7dd; --panel:#ffffff;
+    --ink:#1b1f26; --ink-soft:#4c5159; --ink-faint:#7c8089; --hair:#e2ded4;
+    --accent:#0c6b4f; --accent-2:#0a5d44; --accent-soft:#dcece5;
+    --baseline:#98917f; --o2:#4a6fa5; --warn:#a6602a; --bad:#b23b3b;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+    --ground:#111419; --surface:#171b21; --surface-2:#20252e; --panel:#161a20;
+    --ink:#e9e7e1; --ink-soft:#aeb1b8; --ink-faint:#7c808a; --hair:#282d36;
+    --accent:#35bd90; --accent-2:#2aa87f; --accent-soft:#15342a;
+    --baseline:#847e70; --o2:#6f96c9; --warn:#d08a4f; --bad:#e06666;
+  }}
+  :root[data-theme=dark]{
+    --ground:#111419; --surface:#171b21; --surface-2:#20252e; --panel:#161a20;
+    --ink:#e9e7e1; --ink-soft:#aeb1b8; --ink-faint:#7c808a; --hair:#282d36;
+    --accent:#35bd90; --accent-2:#2aa87f; --accent-soft:#15342a;
+    --baseline:#847e70; --o2:#6f96c9; --warn:#d08a4f; --bad:#e06666;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,sans-serif; font-size:14px;
+    display:flex; flex-direction:column; -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+  .tnum{font-variant-numeric:tabular-nums}
+
+  header{
+    flex:none; display:flex; align-items:center; gap:16px;
+    padding:10px 16px; border-bottom:1px solid var(--hair); background:var(--surface);
+  }
+  .brand{font-weight:700; letter-spacing:-.01em; font-size:15px}
+  .brand b{color:var(--accent)}
+  header .sp{flex:1}
+  select,button,input{font-family:inherit; font-size:13px; color:var(--ink)}
+  select{
+    background:var(--panel); border:1px solid var(--hair); border-radius:6px;
+    padding:6px 10px; max-width:230px;
+  }
+  .runs{
+    display:flex; align-items:center; gap:6px; color:var(--ink-faint);
+    font-family:"IBM Plex Mono",monospace; font-size:12px;
+  }
+  .runs input{width:46px; background:var(--panel); border:1px solid var(--hair);
+    border-radius:5px; padding:5px 6px; text-align:center}
+  #run{
+    background:var(--accent); color:#fff; border:0; border-radius:7px;
+    padding:8px 18px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:8px;
+  }
+  #run:hover{background:var(--accent-2)}
+  #run:disabled{opacity:.6; cursor:progress}
+  .spin{width:13px;height:13px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;
+    border-radius:50%; animation:s .7s linear infinite; display:none}
+  #run.busy .spin{display:inline-block}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .theme{background:none;border:1px solid var(--hair);border-radius:6px;padding:6px 9px;cursor:pointer;color:var(--ink-soft)}
+
+  main{flex:1; display:grid; grid-template-columns:1.05fr 1fr; min-height:0}
+  .pane{min-width:0; min-height:0; display:flex; flex-direction:column}
+  .pane.editor{border-right:1px solid var(--hair)}
+  .pane-head{
+    flex:none; padding:7px 14px; font-family:"IBM Plex Mono",monospace; font-size:11px;
+    letter-spacing:.09em; text-transform:uppercase; color:var(--ink-faint);
+    border-bottom:1px solid var(--hair); background:var(--surface); display:flex; gap:14px; align-items:center;
+  }
+  .CodeMirror,#code{flex:1; height:auto; font-family:"IBM Plex Mono",monospace; font-size:13.5px; line-height:1.55}
+  #code{width:100%; resize:none; border:0; padding:12px 14px; background:var(--panel); color:var(--ink); outline:none}
+
+  .tabs{flex:none; display:flex; border-bottom:1px solid var(--hair); background:var(--surface)}
+  .tabs button{
+    background:none; border:0; border-bottom:2px solid transparent; padding:9px 15px;
+    cursor:pointer; color:var(--ink-faint); font-weight:500;
+  }
+  .tabs button.on{color:var(--ink); border-bottom-color:var(--accent)}
+  .tabwrap{flex:1; overflow:auto; padding:18px}
+  .tabview{display:none}
+  .tabview.on{display:block}
+
+  .hint{color:var(--ink-faint); font-size:13px; line-height:1.6}
+  .err{
+    background:color-mix(in srgb, var(--bad) 9%, var(--surface));
+    border:1px solid color-mix(in srgb, var(--bad) 40%, var(--hair));
+    border-radius:7px; padding:12px 14px; white-space:pre-wrap;
+    font-family:"IBM Plex Mono",monospace; font-size:12.5px; color:var(--ink);
+  }
+
+  /* result tab */
+  .big{
+    font-family:"IBM Plex Mono",monospace; font-weight:600; letter-spacing:-.03em;
+    font-size:clamp(2.4rem,6vw,3.6rem); line-height:1; color:var(--accent);
+  }
+  .big small{font-size:.32em; color:var(--ink-faint); font-weight:500; letter-spacing:0}
+  .sub{margin-top:8px; color:var(--ink-soft)}
+  .rv{
+    display:inline-flex; align-items:center; gap:8px; margin-top:16px;
+    font-family:"IBM Plex Mono",monospace; font-size:13px;
+    background:var(--surface); border:1px solid var(--hair); border-radius:6px; padding:6px 11px;
+  }
+  .rv .ok{color:var(--accent)} .rv .no{color:var(--bad)}
+
+  .bars{margin-top:22px; display:flex; flex-direction:column; gap:10px; max-width:440px}
+  .barrow{display:grid; grid-template-columns:120px 1fr auto; align-items:center; gap:10px;
+    font-family:"IBM Plex Mono",monospace; font-size:12px}
+  .barrow .lab{color:var(--ink-soft); text-align:right}
+  .bartrack{height:16px; background:var(--surface-2); border-radius:3px; overflow:hidden}
+  .barfill{height:100%; border-radius:3px}
+  .barfill.b0{background:var(--baseline)}
+  .barfill.b1{background:var(--accent)}
+  .barfill.b2{background:var(--o2)}
+  .barrow .v{color:var(--ink); font-variant-numeric:tabular-nums}
+
+  /* optimization tab */
+  h3{margin:0 0 8px; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint); font-weight:600}
+  section{margin-bottom:24px}
+  .chips{display:flex; flex-wrap:wrap; gap:7px}
+  .chip{
+    font-family:"IBM Plex Mono",monospace; font-size:12px; padding:5px 10px; border-radius:5px;
+    border:1px solid var(--hair); color:var(--ink-faint); background:var(--surface);
+  }
+  .chip.on{border-color:var(--accent); color:var(--accent); background:var(--accent-soft)}
+  table{width:100%; border-collapse:collapse; font-size:12.5px}
+  th,td{text-align:left; padding:6px 8px; border-bottom:1px solid var(--hair)}
+  th{font-family:"IBM Plex Mono",monospace; font-weight:500; font-size:10.5px; letter-spacing:.06em;
+    text-transform:uppercase; color:var(--ink-faint)}
+  td.n{font-family:"IBM Plex Mono",monospace; text-align:right; font-variant-numeric:tabular-nums}
+  td.on{color:var(--accent)} td.off{color:var(--ink-faint)}
+  .feat-grid{display:grid; grid-template-columns:1fr 1fr; gap:2px 22px; font-family:"IBM Plex Mono",monospace; font-size:12px}
+  .feat-grid div{display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px dotted var(--hair)}
+  .feat-grid span:last-child{color:var(--ink-soft)}
+
+  /* tac diff */
+  .diff{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+  .diff pre{
+    margin:0; padding:12px; background:var(--surface); border:1px solid var(--hair); border-radius:7px;
+    font-family:"IBM Plex Mono",monospace; font-size:11.5px; line-height:1.5; overflow:auto; max-height:70vh;
+    white-space:pre;
+  }
+  .diff .cap{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-faint); margin-bottom:5px; text-transform:uppercase; letter-spacing:.08em}
+  @media(max-width:1100px){ main{grid-template-columns:1fr; grid-template-rows:1fr 1fr} .pane.editor{border-right:0;border-bottom:1px solid var(--hair)} .diff{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">Mini<b>C</b> Playground</span>
+  <select id="examples" title="load an example"></select>
+  <span class="sp"></span>
+  <label class="runs">runs <input id="runs" type="number" min="3" max="15" value="7"></label>
+  <button id="run"><span class="spin"></span><span class="lbl">Run &#9654;</span></button>
+  <button class="theme" id="theme" title="toggle theme">&#9680;</button>
+</header>
+
+<main>
+  <div class="pane editor">
+    <div class="pane-head">source &mdash; MiniC</div>
+    <textarea id="code" spellcheck="false"></textarea>
+  </div>
+
+  <div class="pane">
+    <div class="tabs">
+      <button data-tab="result" class="on">Result</button>
+      <button data-tab="opt">Optimization</button>
+      <button data-tab="tac">TAC diff</button>
+    </div>
+    <div class="tabwrap">
+      <div class="tabview result on" id="v-result">
+        <p class="hint">Write MiniC on the left and press <b>Run</b>. The program is
+        compiled twice with <span class="mono">gcc&nbsp;-O0</span> &mdash; once as-is,
+        once with the pass combo the model recommends &mdash; then timed. MiniC has no
+        I/O, so a program&rsquo;s result is its <span class="mono">return</span> value.</p>
+      </div>
+      <div class="tabview" id="v-opt"><p class="hint">Run a program to see the recommended passes, what each one changed, and the static features the model read.</p></div>
+      <div class="tabview" id="v-tac"><p class="hint">Run a program to see its three-address code before and after optimization.</p></div>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+let cm = null, EXAMPLES = {};
+
+// theme
+const root = document.documentElement;
+try{ const t = localStorage.getItem("minic-theme"); if(t) root.dataset.theme = t; }catch(e){}
+$("#theme").onclick = () => {
+  const cur = root.dataset.theme || (matchMedia("(prefers-color-scheme:dark)").matches ? "dark":"light");
+  const next = cur === "dark" ? "light" : "dark";
+  root.dataset.theme = next;
+  try{ localStorage.setItem("minic-theme", next); }catch(e){}
+  if(cm) cm.refresh();
+};
+
+function setCode(v){ if(cm) cm.setValue(v); else $("#code").value = v; }
+function getCode(){ return cm ? cm.getValue() : $("#code").value; }
+
+if(window.CodeMirror){
+  cm = CodeMirror.fromTextArea($("#code"), {
+    mode:"text/x-csrc", lineNumbers:true, indentUnit:4, tabSize:4,
+    theme:"default", viewportMargin:Infinity
+  });
+  cm.setSize("100%","100%");
+}
+
+fetch("/api/examples").then(r=>r.json()).then(d=>{
+  EXAMPLES = d.examples;
+  const sel = $("#examples");
+  Object.keys(EXAMPLES).forEach(k=>{
+    const o = document.createElement("option"); o.value = k; o.textContent = k; sel.appendChild(o);
+  });
+  setCode(EXAMPLES[Object.keys(EXAMPLES)[0]]);
+  if(!d.model_loaded){
+    $("#v-result").insertAdjacentHTML("beforeend",
+      `<p class="hint" style="color:var(--warn)">No trained model found &mdash; falling back to &ldquo;all passes&rdquo;. Run <span class="mono">python run_experiment.py</span> to train one.</p>`);
+  }
+});
+$("#examples").onchange = e => setCode(EXAMPLES[e.target.value]);
+
+// tabs
+document.querySelectorAll(".tabs button").forEach(b=>{
+  b.onclick = () => {
+    document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on", x===b));
+    document.querySelectorAll(".tabview").forEach(v=>v.classList.toggle("on", v.id === "v-"+b.dataset.tab));
+  };
+});
+
+const fmt = n => n==null ? "&mdash;" : (n).toFixed(2);
+
+$("#run").onclick = async () => {
+  const btn = $("#run");
+  btn.disabled = true; btn.classList.add("busy"); btn.querySelector(".lbl").textContent = "Running";
+  $("#v-result").innerHTML = `<p class="hint">Compiling &amp; timing &mdash; this runs real binaries, give it a few seconds&hellip;</p>`;
+  try{
+    const r = await fetch("/api/compile", {
+      method:"POST", headers:{"content-type":"application/json"},
+      body: JSON.stringify({ source:getCode(), runs: +$("#runs").value })
+    });
+    const d = await r.json();
+    render(d);
+  }catch(err){
+    $("#v-result").innerHTML = `<div class="err">request failed: ${err}</div>`;
+  }finally{
+    btn.disabled = false; btn.classList.remove("busy"); btn.querySelector(".lbl").innerHTML = "Run &#9654;";
+  }
+};
+
+function render(d){
+  if(!d.ok){
+    $("#v-result").innerHTML = `<h3>${d.stage||"error"}</h3><div class="err">${esc(d.error||"unknown error")}</div>`;
+    document.querySelector('.tabs button[data-tab=result]').click();
+    return;
+  }
+  const b = d.baseline, o = d.optimized, o2 = d.o2;
+  const speed = d.speedup, o2speed = d.o2_speedup;
+  const worst = Math.max(b.median_ms, o.ok?o.median_ms:0, o2.ok?o2.median_ms:0);
+  const bar = (ms, cls) => `<div class="bartrack"><div class="barfill ${cls}" style="width:${Math.max(2, 100*ms/worst)}%"></div></div>`;
+
+  $("#v-result").innerHTML = `
+    <div class="big tnum">&times;${speed? speed.toFixed(2): "?"}<small> vs unoptimized</small></div>
+    <div class="sub">${d.model_loaded
+      ? `model picked combo <b>${d.combo}</b> &mdash; ${d.passes.length? d.pass_abbrs.join(" + ") : "no passes"}`
+      : `combo ${d.combo} (all passes &mdash; no model loaded)`}${
+        d.predicted_speedup? ` &nbsp;&middot;&nbsp; predicted &times;${d.predicted_speedup.toFixed(2)}`:""}</div>
+    <div class="rv">return value = ${d.return_value}
+      ${d.outputs_match ? '<span class="ok">&#10003; both builds agree</span>' : '<span class="no">&#10007; MISMATCH</span>'}</div>
+    <div class="bars">
+      <div class="barrow"><span class="lab">baseline -O0</span>${bar(b.median_ms,"b0")}<span class="v">${fmt(b.median_ms)} ms</span></div>
+      <div class="barrow"><span class="lab">optimized -O0</span>${o.ok? bar(o.median_ms,"b1"): "<span>&mdash;</span>"}<span class="v">${o.ok? fmt(o.median_ms)+" ms":"&mdash;"}</span></div>
+      <div class="barrow"><span class="lab">gcc -O2 (ref)</span>${o2.ok? bar(o2.median_ms,"b2"): "<span>&mdash;</span>"}<span class="v">${o2.ok? fmt(o2.median_ms)+" ms":"&mdash;"}</span></div>
+    </div>
+    <p class="hint" style="margin-top:20px">
+      Our source-level optimizer at <span class="mono">-O0</span> is
+      <b>&times;${speed? speed.toFixed(2):"?"}</b> over doing nothing, and closes
+      <b>${(speed&&o2speed)? Math.round(100*(speed-1)/(o2speed-1)) : "?"}%</b>
+      of the gap to <span class="mono">gcc -O2</span> without the C compiler optimizing at all.
+      &nbsp;<span style="color:var(--ink-faint)">(${d.elapsed_s}s, ${$("#runs").value} runs each)</span>
+    </p>`;
+
+  // optimization tab
+  const chips = [["CF",1],["DCE",2],["CSE",4],["LICM",8],["SR",16],["LU",32]]
+    .map(([ab,bit]) => `<span class="chip ${d.combo&bit?"on":""}">${ab}</span>`).join("");
+  const act = (d.activity||[]).map(a => `<tr>
+      <td class="${a.enabled?"on":"off"}">${a.pass}</td>
+      <td class="${a.enabled?"":"off"}">${a.enabled?"on":"off"}</td>
+      <td class="n">${a.enabled? (a.delta>0?"+":"")+a.delta : "&mdash;"}</td>
+      <td class="n">${a.enabled? (a.annotated||0) : "&mdash;"}</td></tr>`).join("");
+  const feats = Object.entries(d.features).map(([k,v]) =>
+      `<div><span>${k}</span><span>${(+v).toString()}</span></div>`).join("");
+  $("#v-opt").innerHTML = `
+    <section><h3>recommended combo &mdash; ${d.combo}</h3><div class="chips">${chips}</div></section>
+    <section><h3>what each pass did (run individually)</h3>
+      <table><thead><tr><th>pass</th><th>state</th><th>&Delta; instrs</th><th>rewrites</th></tr></thead>
+      <tbody>${act}</tbody></table>
+      <p class="hint" style="font-size:11.5px;margin-top:6px">&Delta; instrs = change in TAC instruction count; rewrites = instructions the pass tagged (CSE copies, hoists, reductions, unroll guards).</p></section>
+    <section><h3>static features the model read (19)</h3><div class="feat-grid">${feats}</div></section>`;
+
+  // tac diff
+  $("#v-tac").innerHTML = `<div class="diff">
+    <div><div class="cap">before &mdash; combo 0</div><pre>${esc(d.tac_before)}</pre></div>
+    <div><div class="cap">after &mdash; combo ${d.combo}</div><pre>${esc(d.tac_after)}</pre></div>
+  </div>`;
+}
+function esc(s){ return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+</script>
+</body>
+</html>

@@ -3,24 +3,40 @@
 ## Layout
 
 ```
-benchmarks/                 18 MiniC programs, 5 categories, high trip counts
-  loops/ numeric/ structs/ recursion/ strings/
+benchmarks/                 30 hand-written MiniC programs, 5 categories
+  loops/ numeric/ structs/ recursion/ strings/ + ground_truth.csv
+benchmarks/generated/       parametric corpus (gitignored; regenerate with --seed 7)
 src/minic/harness/
-  compiler.py               gcc -O0 wrapper -> runnable binary
-  timer.py                  measure_execution_time(): N runs, drop warmups, median ms
-  sweeper.py                per (program x 64 combos): features + median time + speedup vs combo 0
-  report.py                 dataset CSV -> RESULTS.md (geomean / best / per-program table)
+  compiler.py               gcc -O0 / -O2 wrapper -> runnable binary
+  timer.py                  measure_execution_time(): N runs, drop warmups, median + min ms
+  sweeper.py                parallel (across programs, worker-capped): per (program x 64 combos)
+                            features + min time + speedup vs combo 0
+  gen_corpus.py             parametric benchmark generator (single-pattern + composites)
+  report.py                 dataset CSV -> RESULTS.md
+  plot.py / ground_truth.py chart + oracle table
 src/minic/ml/
-  dataset.py                CSV -> X (19 features + 5 flag bits), y (speedup), groups (program_id)
-  model.py                  RandomForestRegressor wrapper + pickle persistence
+  dataset.py                CSV -> X (19 features + 6 pass-flag bits), y (speedup), groups (program_id)
+  model.py                  RandomForest wrapper + pickle
   train.py                  GroupKFold(program_id) CV + final fit
   predictor.py              recommend_combo(features, model) -> best combo 0..63
-demo/cli.py                 `recommend` (features + ML pick) and `benchmark` (time across combos)
+demo/cli.py                 `recommend` / `benchmark`
+demo/app.py + static/       browser playground (Flask): editor -> compile both ways -> speedup +
+                            optimization report + TAC diff + gcc -O2 reference
 run_experiment.py           sweep -> dataset -> train -> RESULTS.md, one command
-data/
-  benchmark_dataset.csv     the sweep output
-  trained_model.pkl         the fitted model
 ```
+
+## Playground GUI
+
+```bash
+python -m demo.app          # http://127.0.0.1:5005
+```
+
+CodeMirror editor on the left; Run compiles the program twice with `gcc -O0`
+(as-is, and with the ML-recommended combo), times both, and shows: the speedup,
+`return value` with a "both builds agree" check, a baseline / optimized / `gcc -O2`
+bar chart, the recommended passes, a per-pass "what it changed" table, the 19
+static features, and the TAC before/after. Local demo only -- gcc runs are
+timeout- and output-capped; a public deployment would need real sandboxing.
 
 ## What "speedup" means here
 

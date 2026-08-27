@@ -47,7 +47,7 @@ class TestHarness(unittest.TestCase):
         prog = os.path.join(work, "p.mc")
         with open(prog, "w") as fh:
             fh.write(_PROG)
-        sweep(programs=[prog], out_csv=out, runs=3, warmup=1,
+        sweep(programs=[prog], out_csv=out, runs=3, warmup=1, workers=1,
               combos=[0, 1, 8, 63], progress=lambda *a: None)
 
         rows = list(csv.DictReader(open(out, newline="")))
@@ -68,7 +68,7 @@ class TestDataset(unittest.TestCase):
         feats = {n: float(i) for i, n in enumerate(FEATURE_NAMES)}
         x = features_to_x(feats, combo_id=13)  # CF + CSE + LICM
         self.assertEqual(len(x), len(X_COLUMNS))
-        self.assertEqual(x[-5:], [1.0, 0.0, 1.0, 1.0, 0.0])
+        self.assertEqual(x[-6:], [1.0, 0.0, 1.0, 1.0, 0.0, 0.0])  # cf dce cse licm sr lu
 
 
 if __name__ == "__main__":

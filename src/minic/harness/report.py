@@ -5,7 +5,7 @@ import statistics
 from collections import defaultdict
 from typing import Dict, List
 
-from ..optimizer.pass_manager import get_pass_names
+from ..optimizer.pass_manager import get_pass_names, NUM_PASSES
 
 
 def _geomean(xs: List[float]) -> float:
@@ -84,7 +84,7 @@ def summarize(csv_path: str) -> dict:
 
 def render_markdown(csv_path: str, cv: dict = None) -> str:
     s = summarize(csv_path)
-    npass = 5
+    npass = NUM_PASSES
     L: List[str] = []
     L.append("# MiniC optimizer: measured speedup results\n")
     L.append(f"**{s['n_programs']} MiniC benchmarks**, each emitted as C at every "

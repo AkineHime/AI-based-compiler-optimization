@@ -36,7 +36,11 @@ def strength_reduction_pass(func: TACFunction) -> TACFunction:
 
         for div_inst, biv_name, step_const, mult_const, is_addition in divs:
             max_temp_id += 1
-            sr_temp = Temp(id=max_temp_id, type_str="int")
+            # A *named* accumulator, not a temp: it is loop-carried and written
+            # twice (seed + step), so downstream passes that assume temps are
+            # single-assignment (constant folding) must see it as an ordinary
+            # mutable local.
+            sr_temp = Var(name=f"__sr{max_temp_id}", type_str="int")
             optimized_func.local_types[str(sr_temp)] = "int"
 
             step_val = wrap32(step_const * mult_const)
@@ -150,6 +154,24 @@ def _find_basic_induction_vars(loop: Loop) -> Tuple[Dict[str, Tuple[int, bool]],
                     if v_name == inst.dst.name:
                         bivs[v_name] = (step_c, is_add)
                         updates.setdefault(v_name, []).append(inst)
+
+    # A basic induction variable must be written exactly once in the loop.
+    # (An unrolled body writes it once per copy -- those are not bivs.)
+    def _var_write_count(name: str) -> int:
+        n = 0
+        for ins in all_insts:
+            if isinstance(ins.dst, Var) and ins.dst.name == name:
+                n += 1
+            if ins.opcode in (Opcode.STORE_ARR_1D, Opcode.STORE_ARR_2D,
+                              Opcode.SET_FIELD) and isinstance(ins.dst, Var) \
+                    and ins.dst.name == name:
+                n += 1
+        return n
+
+    for name in list(bivs):
+        if _var_write_count(name) != 1 or len(updates.get(name, [])) != 1:
+            del bivs[name]
+            updates.pop(name, None)
 
     return bivs, updates
 

@@ -12,13 +12,23 @@ correctness bugs listed in the earlier revision of this file have now been
 
 | Bit | Pass | Module |
 |---|---|---|
-| `1` | Constant folding + propagation + algebraic simplification | `optimizer/constant_folding.py` |
+| `1` | Constant folding + propagation + whole-function const propagation + algebraic simplification | `optimizer/constant_folding.py` |
 | `2` | Dead code elimination (liveness + unreachable blocks + label/alloc cleanup) | `optimizer/dce.py` |
-| `4` | Common subexpression elimination (local value numbering) | `optimizer/cse.py` |
+| `4` | Common subexpression elimination (local value numbering + copy propagation) | `optimizer/cse.py` |
 | `8` | Loop-invariant code motion | `optimizer/licm.py` |
 | `16` | Strength reduction | `optimizer/strength_reduction.py` |
+| `32` | Loop unrolling (factor 4, remainder loop) | `optimizer/loop_unroll.py` |
 
-Canonical order CF → CSE → LICM → SR → DCE. `combo 0` = untouched baseline.
+**6 passes -> 64 combos.** Canonical order **CF → CSE → LU → LICM → SR → DCE**,
+and the whole sequence is **iterated to a fixed point** (`PassManager.MAX_ROUNDS`)
+so LICM/CF/CSE clean up after LU and each other. `combo 0` = untouched baseline.
+
+LU sits before LICM/SR because those introduce loop-carried temporaries and the
+unroller only duplicates a body whose temps are iteration-local.  Two latent
+bugs surfaced and were fixed while wiring LU in: SR did not require its
+induction variable to be written exactly once (an unrolled loop writes it once
+per copy), and CF propagated a temp's value across a block boundary assuming
+single-assignment (SR's accumulator, now a named `__srN` var, breaks that).
 `optimizer/_util.py` holds the shared 32-bit / C-arithmetic helpers and the
 "which globals may a call clobber" query.
 
