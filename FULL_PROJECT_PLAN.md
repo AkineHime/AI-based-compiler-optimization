@@ -463,7 +463,7 @@ int main() {
   - Prevents data leakage between different optimization combinations of the same benchmark.
 - **Evaluation Metrics:**
   - **Speedup Achieved:** Ratio of speedup with predicted combo vs. baseline ($1.0$).
-  - **Regret / Optimality Gap:** $S_{\text{oracle\_best}} - S_{\text{predicted}}$.
+  - **Regret / Optimality Gap:** $S_{\text{oracle-best}} - S_{\text{predicted}}$.
   - **Top-1 Accuracy:** How often the predicted combo matches the true optimal combo within 2% margin.
 
 ---
