@@ -383,15 +383,19 @@ const RESULTS = {
   "best_fixed_geomean": 1.21,
   "cv": {
     "kind": "hist_gradient_boosting",
+    "strategy": "margin:0.12",
+    "margin": 0.12,
+    "argmax_reco": 1.26,
+    "argmax_regress": 21,
     "held_out": 270,
     "n_groups": 270,
     "folds": 5,
-    "mae": 0.163,
-    "reco": 1.26,
+    "mae": 0.161,
+    "reco": 1.23,
     "oracle": 1.54,
     "baseline": 1.0,
-    "capture": 49,
-    "regression_rate": 21
+    "capture": 44,
+    "regression_rate": 9
   },
   "data": [
     [
@@ -621,7 +625,15 @@ const RESULTS = {
       1.24
     ]
   ],
-  "top_features": []
+  "top_features": [
+    "opp_const_foldable",
+    "opp_est_dyn_kilo_insts",
+    "total_instructions",
+    "branch_density",
+    "basic_block_count",
+    "instruction_density_in_loops",
+    "multiplication_count"
+  ]
 };
 
 const PASS = [["CF",1],["DCE",2],["CSE",4],["LICM",8],["SR",16],["LU",32]];
@@ -682,18 +694,26 @@ g("nosingle").innerHTML =
   "unrolling can each slightly pessimise a tight loop whose multiply or loop overhead " +
   "was already cheap under <span class=\"mono\">-O0</span>.";
 g("fixedcombo").innerHTML =
-  "A safe fixed default (combo " + R.safe_combo + ", " + abbr(R.safe_combo) + ") never regresses " +
-  "more than <span class=\"mono\">\u00d7" + R.safe_worst.toFixed(2) + "</span> and averages " +
-  "<span class=\"mono\">\u00d7" + R.safe_geomean.toFixed(2) + "</span>. The best fixed combo (" +
-  R.best_fixed_combo + ", " + abbr(R.best_fixed_combo) + ") averages " +
-  "<span class=\"mono\">\u00d7" + R.best_fixed_geomean.toFixed(2) + "</span>. Per-program tuning beats both.";
+  (R.safe_combo === 0
+    ? "There is no safe fixed set of passes to always turn on: <i>every</i> non-empty " +
+      "combo regresses more than 3% on at least one of the " + R.n_programs +
+      " programs. "
+    : "A safe fixed default (combo " + R.safe_combo + ", " + abbr(R.safe_combo) +
+      ") never regresses more than <span class=\"mono\">\u00d7" + R.safe_worst.toFixed(2) +
+      "</span> and averages <span class=\"mono\">\u00d7" + R.safe_geomean.toFixed(2) + "</span>. ") +
+  "The best fixed combo (" + R.best_fixed_combo + ", " + abbr(R.best_fixed_combo) +
+  ") averages <span class=\"mono\">\u00d7" + R.best_fixed_geomean.toFixed(2) +
+  "</span>, still short of the <span class=\"mono\">\u00d7" + R.geomean_best.toFixed(2) +
+  "</span> a per-program choice reaches.";
 
 g("cats").innerHTML = R.cats.map(c =>
   '<tr><td><span class="catbar" style="width:' + Math.max(2, (c[1] - 1) * 90) + 'px"></span>' +
   c[0] + '</td><td class="num">\u00d7' + c[1].toFixed(2) + '</td></tr>').join("");
 
 const kn = C.kind.replace(/_/g, " ");
-g("ml-title").textContent = kn.charAt(0).toUpperCase() + kn.slice(1) + " on 27 features + 6 pass flags";
+g("ml-title").textContent = kn.charAt(0).toUpperCase() + kn.slice(1) +
+  " on 27 features + 6 pass flags"  +
+  (C.margin ? " · abstain margin ×" + (1 + C.margin).toFixed(2) : "");
 g("feats").innerHTML = R.top_features.map((f, i) =>
   '<span class="feat' + (i < 4 ? " top" : "") + '">' + f + '</span>').join("");
 g("ml-held").textContent = "On " + C.held_out + " held-out programs";
@@ -706,8 +726,12 @@ g("ml-summary").innerHTML =
   "The model&rsquo;s pick lands <b>\u00d7" + C.reco.toFixed(2) + "</b> on average against a <b>\u00d7" +
   C.oracle.toFixed(2) + "</b> best-in-hindsight ceiling &mdash; it recovers <b>" + C.capture +
   "%</b> of the available speedup without running the program. Speedup-prediction MAE " +
-  "<span class=\"mono\">" + C.mae.toFixed(3) + "</span>" +
-  (C.regression_rate === 0 ? ", and it never recommends a combo that regresses." : ".");
+  "<span class=\"mono\">" + C.mae.toFixed(3) + "</span>." +
+  (C.margin
+    ? " It falls back to <i>no passes</i> unless the predicted gain clears ×" +
+      (1 + C.margin).toFixed(2) + ", cutting recommendations that regress the program " +
+      "from <b>" + C.argmax_regress + "%</b> (plain argmax) to <b>" + C.regression_rate + "%</b>."
+    : (C.regression_rate === 0 ? " It never recommends a combo that regresses." : ""));
 
 g("foot-left").textContent =
   R.n_programs + " benchmarks \u00b7 " + R.n_combos + " pass combos \u00b7 " +

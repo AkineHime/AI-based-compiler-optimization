@@ -207,8 +207,11 @@ def compile_endpoint():
     feats = all_features(ast, tac)
 
     # recommend
+    strategy = margin = None
     if _MODEL is not None:
         combo, pred, _names = recommend_combo(feats, _MODEL)
+        strategy = _MODEL.metadata.get("strategy")
+        margin = _MODEL.metadata.get("margin")
     else:
         combo, pred = NUM_COMBOS - 1, None  # fall back to "all passes"
 
@@ -233,6 +236,9 @@ def compile_endpoint():
         "pass_abbrs": get_pass_abbrs(combo),
         "predicted_speedup": round(pred, 3) if pred is not None else None,
         "model_loaded": _MODEL is not None,
+        "strategy": strategy,
+        "abstain_margin": round(1 + margin, 2) if margin else None,
+        "abstained": bool(strategy == "margin" and combo == 0),
         "features": feats,
         "baseline": baseline,
         "optimized": optimized,

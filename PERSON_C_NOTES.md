@@ -20,9 +20,13 @@ src/minic/features/
                             loop work, estimated dynamic instruction count)
 src/minic/ml/
   dataset.py                CSV -> X (27 features + 6 pass-flag bits), y (speedup), groups (program_id)
-  model.py                  RandomForest / ExtraTrees / HistGradientBoosting + pickle
-  train.py                  GroupKFold(program_id) bake-off, scored on recommendation quality
-  predictor.py              recommend_combo(features, model) -> best combo 0..63
+  model.py                  RF / ExtraTrees / HGBT regressors + per-pass HGBT classifier;
+                            SpeedupModel.select_combo() applies the chosen strategy
+  train.py                  GroupKFold(program_id) bake-off; choose_strategy() ranks
+                            {argmax, abstain-margin sweep, per-pass classifiers} on
+                            recommendation quality and picks the most useful one that
+                            keeps regressions <= 10%
+  predictor.py              recommend_combo(features, model) -> recommended combo 0..63
 demo/cli.py                 `recommend` / `benchmark`
 demo/app.py + static/       browser playground (Flask): editor -> compile both ways -> speedup +
                             optimization report + TAC diff + gcc -O2 reference
@@ -38,9 +42,11 @@ python -m demo.app          # http://127.0.0.1:5005
 CodeMirror editor on the left; Run compiles the program twice with `gcc -O0`
 (as-is, and with the ML-recommended combo), times both, and shows: the speedup,
 `return value` with a "both builds agree" check, a baseline / optimized / `gcc -O2`
-bar chart, the recommended passes, a per-pass "what it changed" table, the 19
-static features, and the TAC before/after. Local demo only -- gcc runs are
-timeout- and output-capped; a public deployment would need real sandboxing.
+bar chart, the recommended passes, a per-pass "what it changed" table, the 27
+static + opportunity features, and the TAC before/after. When the recommender
+abstains (nothing clears its confidence margin) the UI says so. Local demo only
+-- gcc runs are timeout- and output-capped; a public deployment would need real
+sandboxing.
 
 ## What "speedup" means here
 
@@ -54,34 +60,49 @@ MiniC TAC optimizer itself contributes, not what gcc would do anyway. `combo 0`
 
 ```bash
 pip install -r requirements.txt
-python run_experiment.py            # ~20-30 min: full 64-combo sweep + train + report
-python run_experiment.py --quick    # ~4 min: 7 key combos, smaller dataset
+python -m src.minic.harness.gen_corpus --out benchmarks/generated --n 240 --validate --seed 7
+python run_experiment.py --runs 15 --warmup 4 --workers 8   # ~75 min full 64-combo sweep + strategy bake-off + train + report
+python run_experiment.py --skip-sweep                       # ~2 min: re-bake / retrain from the existing dataset CSV
+python run_experiment.py --quick                            # fast smoke: 7 key combos only
 python -m demo.cli recommend benchmarks/loops/licm_arith.mc --verify
 python -m demo.cli benchmark benchmarks/structs/distance_accum.mc
 ```
 
+## Current results (270 programs, 64 combos, 17,280 timed configs)
+
+- Best combo per program, geomean **x1.50** (max x4.57, `distance_accum`).
+- All 6 passes on is *not* the per-program best on 243 / 270 programs; no fixed
+  non-empty combo avoids regressing >3% somewhere -> a per-program recommender earns its keep.
+- Recommender (HGBT + abstain margin x1.12): true speedup **x1.23** on held-out
+  programs, **44%** of the oracle-available gain, **9%** of picks regress >2%
+  (down from 21% for plain argmax).
+
 ## GroupKFold — why it matters
 
-A program's 64 rows share the same 19 static features, differing only in the 5
+A program's 64 rows share the same 27 static features, differing only in the 6
 flag bits and the timing. A random train/test split would put near-identical
 rows on both sides and massively overstate accuracy. `GroupKFold(program_id)`
 holds *whole programs* out, so the CV number answers the real question: "given a
-MiniC program we have never timed, how good is the combo we recommend?"
+MiniC program we have never timed, how good is the combo we recommend?"  The
+selection *strategy* is cross-validated the same way (`choose_strategy`).
 
 ## Dataset schema
 
-`program_id, category, f_<19 features>, combo_id, flag_cf, flag_dce, flag_cse,
-flag_licm, flag_sr, exit_code, median_time_ms, speedup_ratio`
+`program_id, category, f_<27 features>, combo_id, flag_cf, flag_dce, flag_cse,
+flag_licm, flag_sr, flag_lu, exit_code, median_time_ms, min_time_ms, speedup_ratio`
 
-The 19 features are `FEATURE_NAMES` from `src/minic/features/extractor.py`
-(`variable_count` was split into `named_variable_count` + `temp_variable_count`).
+27 features = 19 static (`FEATURE_NAMES`, `src/minic/features/extractor.py`;
+`variable_count` split into `named_variable_count` + `temp_variable_count`) + 8
+opportunity features (`OPPORTUNITY_NAMES`, `src/minic/features/opportunity.py`).
+`speedup_ratio = min_time_ms(combo 0) / min_time_ms(combo)`.
 
 ## Notes / limits
 
 - Timing is wall-clock via `time.perf_counter_ns()` around `subprocess.run`;
   on a noisy machine widen `--runs`. Programs are sized so `gcc -O0` combo 0 is
   ~50-200 ms, comfortably above scheduler noise.
-- The corpus is a Person C bootstrap so the pipeline runs end to end; Person D's
-  fuller 30-40 program corpus drops into `benchmarks/` with no code change
-  (the sweeper globs `benchmarks/**/*.mc`).
-- Streamlit demo not built (CLI only, by request).
+- 30 hand-written benchmarks live in `benchmarks/`; the parametric generator
+  adds ~240 more under `benchmarks/generated/` (gitignored -- regenerate with
+  `--seed 7`). Person D's fuller corpus drops into `benchmarks/` with no code
+  change (the sweeper globs `benchmarks/**/*.mc`).
+- Both a CLI (`demo/cli.py`) and a browser playground (`demo/app.py`) are built.

@@ -11,7 +11,7 @@ import time
 
 from src.minic.harness.sweeper import sweep
 from src.minic.harness.report import render_markdown
-from src.minic.ml.train import bakeoff, cross_validate, train_final
+from src.minic.ml.train import choose_strategy, train_final
 
 DATASET = "data/benchmark_dataset.csv"
 MODEL = "data/trained_model.pkl"
@@ -39,20 +39,30 @@ def main(argv=None):
         print(f"reusing {DATASET}")
 
     print("\n" + "=" * 70)
-    print("GroupKFold CV bake-off (grouped by program_id):")
-    print(f"  {'model':24s} {'MAE':>7} {'reco':>7} {'oracle':>7} {'capture':>8} {'regress%':>9}")
-    rows = bakeoff(DATASET, n_splits=5)
-    for r in rows:
-        print(f"  {r['kind']:24s} {r['cv_mae']:7.3f} x{r['reco_speedup_mean']:5.2f} "
-              f"x{r['oracle_speedup_mean']:5.2f} {100*r['capture']:7.0f}% "
-              f"{100*r['regression_rate']:8.0f}%")
-    cv = rows[0]
-    print(f"\n  winner: {cv['kind']}  ({cv['held_out_programs']} held-out programs, "
-          f"{cv['n_splits']} folds)")
+    print("Strategy bake-off (GroupKFold / KFold by program_id):")
+    win = choose_strategy(DATASET, n_splits=5)
+    print(f"  {'strategy':14s} {'model':22s} {'reco':>6} {'oracle':>7} "
+          f"{'capture':>8} {'regress%':>9}")
+    for t in sorted(win["table"], key=lambda t: (t["regression_rate"], -t["capture"])):
+        print(f"  {t['strategy']:14s} {t['kind']:22s} x{t['reco_speedup_mean']:4.2f} "
+              f"x{t['oracle_speedup_mean']:5.2f} {100*t['capture']:7.0f}% "
+              f"{100*t['regression_rate']:8.0f}%")
+    print(f"\n  winner: {win['strategy']} / {win['kind']}  "
+          f"({win['held_out_programs']} held-out programs, {win['n_splits']} folds)")
 
-    m = train_final(DATASET, MODEL, cv["kind"])
-    print(f"  final model -> {MODEL}  ({m.metadata['n_rows']} rows, {cv['kind']})")
+    strat = ("per_pass" if win["strategy"] == "per_pass"
+             else "margin" if win["margin"] else "argmax")
+    kind = win["reg_kind"]
+    m = train_final(DATASET, MODEL, kind=kind, strategy=strat, margin=win["margin"])
+    print(f"  final model -> {MODEL}  ({m.metadata['n_rows']} rows, {kind} / {strat})")
 
+    cv = {"kind": kind, "strategy": win["strategy"],
+          "held_out_programs": win["held_out_programs"], "n_groups": win["n_groups"],
+          "n_splits": win["n_splits"], "cv_mae": win.get("cv_mae", float("nan")),
+          "reco_speedup_mean": win["reco_speedup_mean"],
+          "oracle_speedup_mean": win["oracle_speedup_mean"],
+          "baseline_mean": win["baseline_mean"], "capture": win["capture"],
+          "regression_rate": win["regression_rate"]}
     md = render_markdown(DATASET, cv)
     with open(RESULTS, "w", encoding="utf-8") as fh:
         fh.write(md)

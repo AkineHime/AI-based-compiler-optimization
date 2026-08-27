@@ -1,4 +1,8 @@
-"""Online recommendation: MiniC features -> predicted-best optimization combo."""
+"""Online recommendation: MiniC features -> recommended optimization combo.
+
+Dispatches through the model's chosen strategy (argmax / abstain-margin /
+per-pass classifiers); see ``SpeedupModel.select_combo``.
+"""
 from typing import List, Tuple
 
 from .dataset import features_to_x
@@ -8,12 +12,8 @@ from ..optimizer.pass_manager import get_pass_names, NUM_COMBOS
 
 def recommend_combo(feature_dict: dict, model: SpeedupModel,
                     combos=range(NUM_COMBOS)) -> Tuple[int, float, List[str]]:
-    best_combo, best_pred = 0, -1e9
-    for c in combos:
-        pred = model.predict([features_to_x(feature_dict, c)])[0]
-        if pred > best_pred:
-            best_pred, best_combo = pred, c
-    return best_combo, best_pred, get_pass_names(best_combo)
+    combo, pred = model.select_combo(feature_dict, combos)
+    return combo, pred, get_pass_names(combo)
 
 
 def rank_combos(feature_dict: dict, model: SpeedupModel, top: int = 5):

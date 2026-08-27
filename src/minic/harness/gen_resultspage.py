@@ -8,18 +8,39 @@ import os
 import re
 
 from .report import summarize
-from ..ml.train import bakeoff, train_final
+from ..ml.train import choose_strategy, train_final
 
 PAGE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))), "docs", "results.html")
 
 
-def build(csv_path="data/benchmark_dataset.csv", model_out="data/trained_model.pkl"):
+def build(csv_path="data/benchmark_dataset.csv", model_out="data/trained_model.pkl",
+          _precomputed=None):
     s = summarize(csv_path)
-    cv = bakeoff(csv_path)[0]
-    model = train_final(csv_path, model_out, cv["kind"])
-    top_feats = [f[2:] if f.startswith("f_") else f
-                 for f in model.metadata.get("top_features", [])][:7]
+    if _precomputed is not None:
+        win, cv, model = _precomputed
+    else:
+        win = choose_strategy(csv_path)
+        strat = ("per_pass" if win["strategy"] == "per_pass"
+                 else "margin" if win["margin"] else "argmax")
+        kind = win["reg_kind"]
+        model = train_final(csv_path, model_out, kind=kind, strategy=strat,
+                            margin=win["margin"])
+        amx = next((t for t in win["table"] if t["strategy"] == "argmax"
+                    and t["kind"] == kind), win)
+        cv = {"kind": kind, "strategy": win["strategy"], "margin": win["margin"],
+              "argmax_reco": amx["reco_speedup_mean"],
+              "argmax_regress": amx["regression_rate"],
+              "held_out_programs": win["held_out_programs"], "n_groups": win["n_groups"],
+              "n_splits": win["n_splits"], "cv_mae": win.get("cv_mae", float("nan")),
+              "reco_speedup_mean": win["reco_speedup_mean"],
+              "oracle_speedup_mean": win["oracle_speedup_mean"],
+              "baseline_mean": win["baseline_mean"], "capture": win["capture"],
+              "regression_rate": win["regression_rate"]}
+    # the page frames these as "static program features" -> drop the pass-flag
+    # inputs (which unsurprisingly dominate raw importance) for that list
+    _imp = model.metadata.get("top_features", [])
+    top_feats = [f[2:] for f in _imp if f.startswith("f_")][:7]
 
     ranked = sorted(s["per_program"], key=lambda p: -p["best_speedup"])
     data = [
@@ -53,6 +74,10 @@ def build(csv_path="data/benchmark_dataset.csv", model_out="data/trained_model.p
         "best_fixed_geomean": round(s["best_single_combo_geomean"], 2),
         "cv": {
             "kind": cv["kind"],
+            "strategy": cv["strategy"],
+            "margin": cv["margin"],
+            "argmax_reco": round(cv["argmax_reco"], 2),
+            "argmax_regress": round(100 * cv["argmax_regress"]),
             "held_out": cv["held_out_programs"],
             "n_groups": cv["n_groups"],
             "folds": cv["n_splits"],

@@ -33,6 +33,12 @@
   (feature vector 19 -> 27 for ML).
 - `src/minic/ml/`: RandomForest / ExtraTrees / HistGradientBoosting, GroupKFold
   bake-off scored on recommendation quality, predictor.
+- ML recommender is now **risk-aware**: a cross-validated strategy bake-off
+  (plain argmax vs. abstain-margin sweep vs. per-pass classifiers) picks the
+  most useful recommender that keeps regressions <=10%. Winner on the 270-program
+  corpus: HGBT + abstain margin x1.12 -> recommendation regressions 21% -> 9%,
+  capture 44%. Model artifact carries `strategy` / `margin`; the demo surfaces
+  when it abstains.
 - `demo/cli.py` (`recommend` / `benchmark`) and `demo/app.py` + `static/`
   (browser playground: editor -> compile both ways -> speedup + optimization
   report + TAC diff + `gcc -O2` reference).

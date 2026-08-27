@@ -273,6 +273,7 @@ function render(d){
       ? `model picked combo <b>${d.combo}</b> &mdash; ${d.passes.length? d.pass_abbrs.join(" + ") : "no passes"}`
       : `combo ${d.combo} (all passes &mdash; no model loaded)`}${
         d.predicted_speedup? ` &nbsp;&middot;&nbsp; predicted &times;${d.predicted_speedup.toFixed(2)}`:""}</div>
+    ${d.abstained? `<p class="hint" style="color:var(--ink-faint);margin-top:6px">No combo cleared the model&rsquo;s &times;${d.abstain_margin} confidence margin, so it recommends leaving optimization off rather than risk a slowdown.</p>`:""}
     <div class="rv">return value = ${d.return_value}
       ${d.outputs_match ? '<span class="ok">&#10003; both builds agree</span>' : '<span class="no">&#10007; MISMATCH</span>'}</div>
     <div class="bars">

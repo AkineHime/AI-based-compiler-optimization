@@ -45,7 +45,7 @@ def cmd_recommend(args):
     feats = all_features(ast, tac)
 
     print(f"# {os.path.basename(args.file)}")
-    print("\nstatic features (19):")
+    print(f"\nstatic + opportunity features ({len(feats)}):")
     for k, v in feats.items():
         print(f"  {k:30s} {v:g}")
 
@@ -53,8 +53,12 @@ def cmd_recommend(args):
         from src.minic.ml import SpeedupModel, recommend_combo, rank_combos
         model = SpeedupModel.load(args.model)
         combo, pred, names = recommend_combo(feats, model)
+        strat = model.metadata.get("strategy", "argmax")
+        note = ""
+        if strat == "margin" and combo == 0:
+            note = f"  (abstained: nothing cleared the x{1 + model.metadata['margin']:.2f} margin)"
         print(f"\nML-recommended combo: {combo}  "
-              f"[{', '.join(names) or 'baseline'}]   predicted speedup x{pred:.3f}")
+              f"[{', '.join(names) or 'baseline'}]   predicted speedup x{pred:.3f}{note}")
         print("top 5 predicted:")
         for c, p in rank_combos(feats, model):
             print(f"  combo {c:2d}  x{p:.3f}  [{', '.join(get_pass_names(c)) or 'baseline'}]")

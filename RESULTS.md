@@ -1,6 +1,6 @@
 # MiniC optimizer: measured speedup results
 
-**270 MiniC benchmarks**, each emitted as C at every one of the **64 pass combinations** (6 independently toggleable passes), compiled with **`gcc -O0`**, and timed (median of 6 wall-clock runs after 3 warm-ups).
+**270 MiniC benchmarks**, each emitted as C at every one of the **64 pass combinations** (6 independently toggleable passes), compiled with **`gcc -O0`**, and timed (least of 15 wall-clock runs after 4 warm-ups -- the least-interfered sample, since the sweep runs programs in parallel).
 
 `speedup = time(combo 0, no passes) / time(combo)` -- how much the MiniC TAC optimizer beats *not* optimizing, with the C compiler pinned at `-O0` so the measured gain is ours, not gcc's.
 
@@ -8,7 +8,7 @@
 
 - **Best combo per program, geomean speedup: x1.50**  (max **x4.57**)
 - All 6 passes on (combo 63): geomean x1.21
-- Safe strong default -- combo 0 [baseline]: geomean x1.00, and never worse than x1.00 on any program
+- There is no safe fixed set of passes to always enable: every non-empty combo regresses more than 3% on at least one program.
 - No single combo is best everywhere: the all-passes combo is left on the table (>2% slower than the per-program best) on **243 / 270** programs -- which is why a per-program recommender is worth having.
 
 ### by category (best-combo geomean)
@@ -20,16 +20,16 @@
 - numeric: x1.37
 - recursion: x1.24
 
-## ML recommendation (RandomForest, GroupKFold by program_id)
+## ML recommendation (abstain-margin recommender, GroupKFold by program_id)
 
-Cross-validation holds *whole programs* out -- a program's rows share identical static features, so a random split would leak.
+Cross-validation holds *whole programs* out -- a program's rows share identical static features, so a random split would leak. The selection strategy is itself cross-validated: from plain argmax, an abstain-margin sweep, and per-pass classifiers, the winner is the most useful recommender that keeps regressions under 10%.
 
-- Model: **hist gradient boosting**, 270 held-out programs (270 programs, 5 folds)
-- Speedup-prediction MAE: 0.163
-- Recommendations that regress the program (>2% slower than baseline): **21%**
-- **Model-recommended combo, mean true speedup on unseen programs: x1.26**
+- Model: **hist gradient boosting** (abstains to no-passes unless predicted gain > x1.12), 270 held-out programs (270 programs, 5 folds)
+- Speedup-prediction MAE: 0.161
+- Recommendations that regress the program (>2% slower than baseline): **9%**
+- **Model-recommended combo, mean true speedup on unseen programs: x1.23**
 - Baseline (combo 0): x1.00   |   oracle (best combo in hindsight): x1.54
-- Model captures **49%** of the available speedup without ever having timed the program.
+- Model captures **44%** of the available speedup without ever having timed the program.
 
 ## Per-program
 

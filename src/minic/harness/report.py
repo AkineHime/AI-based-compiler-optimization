@@ -90,7 +90,8 @@ def render_markdown(csv_path: str, cv: dict = None) -> str:
     L.append(f"**{s['n_programs']} MiniC benchmarks**, each emitted as C at every "
              f"one of the **{2 ** npass} pass combinations** ({npass} independently "
              "toggleable passes), compiled with **`gcc -O0`**, and timed "
-             "(median of 6 wall-clock runs after 3 warm-ups).\n")
+             "(least of 15 wall-clock runs after 4 warm-ups -- the least-interfered "
+             "sample, since the sweep runs programs in parallel).\n")
     L.append("`speedup = time(combo 0, no passes) / time(combo)` -- how much the "
              "MiniC TAC optimizer beats *not* optimizing, with the C compiler "
              "pinned at `-O0` so the measured gain is ours, not gcc's.\n")
@@ -101,10 +102,14 @@ def render_markdown(csv_path: str, cv: dict = None) -> str:
     ac = s["all_on_combo"]
     L.append(f"- All {npass} passes on (combo {ac}): geomean x{s['geomean_all_on']:.2f}")
     sc = s["safe_combo"]
-    L.append(f"- Safe strong default -- combo {sc} "
-             f"[{', '.join(get_pass_names(sc)) or 'baseline'}]: geomean "
-             f"x{s['safe_combo_geomean']:.2f}, and never worse than "
-             f"x{s['safe_combo_worst']:.2f} on any program")
+    if sc == 0:
+        L.append("- There is no safe fixed set of passes to always enable: every "
+                 "non-empty combo regresses more than 3% on at least one program.")
+    else:
+        L.append(f"- Safest strong fixed default -- combo {sc} "
+                 f"[{', '.join(get_pass_names(sc)) or 'baseline'}]: geomean "
+                 f"x{s['safe_combo_geomean']:.2f}, worst case "
+                 f"x{s['safe_combo_worst']:.2f} across all programs")
     L.append(f"- No single combo is best everywhere: the all-passes combo is "
              f"left on the table (>2% slower than the per-program best) on "
              f"**{s['n_all_on_suboptimal']} / {s['n_programs']}** programs -- which is "
@@ -116,13 +121,24 @@ def render_markdown(csv_path: str, cv: dict = None) -> str:
     L.append("")
 
     if cv:
-        L.append("## ML recommendation (RandomForest, GroupKFold by program_id)\n")
+        strat = cv.get("strategy", "argmax")
+        margin = cv.get("margin") or 0.0
+        strat_label = ("abstain-margin recommender" if strat.startswith("margin")
+                       else "per-pass classifiers" if strat == "per_pass"
+                       else "argmax recommender")
+        L.append(f"## ML recommendation ({strat_label}, GroupKFold by program_id)\n")
         L.append("Cross-validation holds *whole programs* out -- a program's rows "
-                 "share identical static features, so a random split would leak.\n")
-        L.append(f"- Model: **{cv.get('kind', 'random forest').replace('_', ' ')}**, "
+                 "share identical static features, so a random split would leak. "
+                 "The selection strategy is itself cross-validated: from plain argmax, "
+                 "an abstain-margin sweep, and per-pass classifiers, the winner is the "
+                 "most useful recommender that keeps regressions under 10%.\n")
+        extra = (f" (abstains to no-passes unless predicted gain > x{1 + margin:.2f})"
+                 if margin else "")
+        L.append(f"- Model: **{cv.get('kind', 'random forest').replace('_', ' ')}**{extra}, "
                  f"{cv['held_out_programs']} held-out programs "
                  f"({cv['n_groups']} programs, {cv['n_splits']} folds)")
-        L.append(f"- Speedup-prediction MAE: {cv['cv_mae']:.3f}")
+        if cv.get("cv_mae") == cv.get("cv_mae"):  # not NaN
+            L.append(f"- Speedup-prediction MAE: {cv['cv_mae']:.3f}")
         if "regression_rate" in cv:
             L.append(f"- Recommendations that regress the program (>2% slower "
                      f"than baseline): **{100 * cv['regression_rate']:.0f}%**")
