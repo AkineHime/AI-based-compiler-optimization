@@ -209,7 +209,7 @@ Every TAC instruction is represented as an instance of `TACInstruction(opcode, d
 
 ### 2.2 Static Feature Vector Specification
 
-The feature extractor produces a numeric vector of **18 static metrics** per program:
+The feature extractor produces a numeric vector of **19 static metrics** per program:
 
 | Index | Feature Name | Description | Extraction Source |
 |---|---|---|---|
@@ -227,7 +227,8 @@ The feature extractor produces a numeric vector of **18 static metrics** per pro
 | 11 | `struct_access_count` | Total `GET_FIELD` and `SET_FIELD` operations | TAC |
 | 12 | `function_call_count` | Number of `CALL` instructions | TAC |
 | 13 | `recursive_call_count` | Number of self-referential calls | AST / TAC |
-| 14 | `variable_count` | Total number of local variables + temporaries | TAC Symbol Table |
+| 14 | `named_variable_count` | Source-level locals + params + globals | TAC Symbol Table |
+| 14b | `temp_variable_count` | Compiler-generated `tN` temporaries | TAC |
 | 15 | `string_ops_count` | Number of string operations | AST / TAC |
 | 16 | `instruction_density_in_loops` | TAC instructions inside loops / total instructions | CFG |
 | 17 | `cyclomatic_complexity` | `Edges - Nodes + 2` in CFG | CFG |
@@ -239,7 +240,7 @@ The feature extractor produces a numeric vector of **18 static metrics** per pro
 The automated harness outputs a CSV file with the following columns:
 
 ```csv
-program_id,f_total_inst,f_bb_count,f_loop_count,f_max_loop_depth,...,f_cyclomatic,combo_id,flag_cf,flag_dce,flag_cse,flag_licm,flag_sr,median_time_ms,speedup_ratio
+program_id,f_total_inst,f_bb_count,f_loop_count,f_max_loop_depth,...,f_named_vars,f_temp_vars,...,f_cyclomatic,combo_id,flag_cf,flag_dce,flag_cse,flag_licm,flag_sr,median_time_ms,speedup_ratio
 matrix_mult,420,12,3,2,...,6,0,0,0,0,0,0,320.5,1.0000
 matrix_mult,420,12,3,2,...,6,1,1,0,0,0,0,312.1,1.0269
 ...
@@ -326,7 +327,7 @@ matrix_mult,420,12,3,2,...,6,63,1,1,1,1,1,210.4,1.5232
   1. Compute dominators for all basic blocks.
   2. Identify back-edges: an edge $u \rightarrow v$ where $v$ dominates $u$.
   3. Reconstruct natural loops from back-edges to calculate nesting depth and loop-instruction count.
-- **Feature Vector Compilation:** Iterates over TAC instructions and AST nodes to output the 18-element numeric array.
+- **Feature Vector Compilation:** Iterates over TAC instructions and AST nodes to output the 19-element numeric array.
 
 ---
 
@@ -455,7 +456,7 @@ int main() {
 #### Framing Strategy:
 - **Regression Framing (Recommended):**
   - Model: `RandomForestRegressor` or `GradientBoostingRegressor`.
-  - Input: $X = [\text{18 Static Features}, \text{5 One-Hot Optimization Flags}]$.
+  - Input: $X = [\text{19 Static Features}, \text{5 One-Hot Optimization Flags}]$.
   - Output: Predict $\hat{S} = \text{Speedup Ratio}$.
   - Inference: For a new program with features $\vec{f}$, evaluate $\hat{S}(\vec{f}, \text{combo}_k)$ for all $k \in [0..63]$ and pick $k^* = \arg\max_k \hat{S}$.
 - **Validation Protocol:**
@@ -559,7 +560,7 @@ gantt
 2. **MiniC Language Design:** Why pointers and dynamic memory were omitted; formal proof that value semantics guarantee alias-free intermediate representations.
 3. **Compiler Architecture:** Front-end parser, TAC opcode design, and value-semantics C codegen wrapper techniques.
 4. **Classical Optimization Passes:** Algorithmic details of Constant Folding, DCE, CSE, LICM, and Strength Reduction.
-5. **Static Feature Engineering:** Detailed justification for the 18 static features extracted from AST and CFG.
+5. **Static Feature Engineering:** Detailed justification for the 19 static features extracted from AST and CFG.
 6. **Empirical Dataset & Timing Methodology:** `gcc -O0` isolation, cache warm-up, and sweep automation.
 7. **Machine Learning Model & Evaluation:** `GroupKFold` validation, regression vs. classification comparison, feature importance rankings, speedup distribution, and optimality gap.
 8. **Demonstration & Conclusion:** CLI/Streamlit interface walkthrough, limitations, and future work.

@@ -32,15 +32,12 @@ class CEmitter:
         # 1. Standard Prelude
         sections.append(self._emit_prelude())
 
-        # 2. Array / String Typedef Wrappers
-        array_typedefs = self._emit_array_typedefs()
-        if array_typedefs:
-            sections.append(array_typedefs)
-
-        # 3. User Struct Definitions
-        struct_defs = self._emit_struct_definitions(program.structs)
-        if struct_defs:
-            sections.append(struct_defs)
+        # 2. User structs + array/string wrappers, in dependency order
+        #    (a wrapper whose element type is a struct, or a struct whose field
+        #    is an array wrapper, must appear after what it refers to).
+        typedefs = self._emit_all_typedefs(program.structs)
+        if typedefs:
+            sections.append(typedefs)
 
         # 4. Global Variable Declarations
         global_decls = self._emit_global_variables(program.global_vars)
@@ -131,44 +128,85 @@ class CEmitter:
             type_name = type_name[7:].strip()
         return re.sub(r"[^a-zA-Z0-9_]", "_", type_name)
 
-    def _emit_array_typedefs(self) -> str:
-        lines: List[str] = []
-        if not self.array_types:
+    def _wrapper_def_line(self, type_str: str, typedef_name: str) -> str:
+        match_2d = re.match(r"^(.+)\[(\d+)\]\[(\d+)\]$", type_str)
+        if match_2d:
+            base, d1, d2 = match_2d.group(1).strip(), match_2d.group(2), match_2d.group(3)
+            return f"typedef struct {{ {self._get_c_type(base)} data[{d1}][{d2}]; }} {typedef_name};"
+        match_1d = re.match(r"^(.+)\[(\d+)\]$", type_str)
+        if match_1d:
+            base, d1 = match_1d.group(1).strip(), match_1d.group(2)
+            return f"typedef struct {{ {self._get_c_type(base)} data[{d1}]; }} {typedef_name};"
+        return ""
+
+    def _struct_def_lines(self, s_name: str, fields: Dict[str, str]) -> List[str]:
+        out = [f"typedef struct {s_name} {{"]
+        for f_name, f_type in fields.items():
+            out.append(f"    {self._get_c_type(f_type)} {f_name};")
+        out.append(f"}} {s_name};")
+        return out
+
+    def _emit_all_typedefs(self, structs: Dict[str, Dict[str, str]]) -> str:
+        """Emit struct and wrapper typedefs so every name is defined before use.
+
+        C needs a complete type at every point it is used by value.  A wrapper
+        ``arr_Point_3`` needs ``Point`` first; a struct field of wrapper type
+        needs that wrapper first.  MiniC forbids recursive structs, so the
+        reference graph is a DAG -- we emit it in topological order.
+        """
+        if not structs and not self.array_types:
             return ""
 
-        lines.append("// --- Value-Semantics Array/String Wrapper Structs ---")
-        for type_str, typedef_name in self.array_types.items():
-            # 2D array
-            match_2d = re.match(r"^(.+)\[(\d+)\]\[(\d+)\]$", type_str)
-            if match_2d:
-                base, d1, d2 = match_2d.group(1).strip(), match_2d.group(2), match_2d.group(3)
-                c_base = self._get_c_type(base)
-                lines.append(f"typedef struct {{ {c_base} data[{d1}][{d2}]; }} {typedef_name};")
-                continue
+        # node id -> (kind, payload)
+        struct_nodes = {f"struct:{n}": ("struct", n) for n in structs}
+        wrap_nodes = {f"wrap:{t}": ("wrap", t) for t in self.array_types}
+        nodes = {**struct_nodes, **wrap_nodes}
 
-            # 1D array / string
-            match_1d = re.match(r"^(.+)\[(\d+)\]$", type_str)
-            if match_1d:
-                base, d1 = match_1d.group(1).strip(), match_1d.group(2)
-                c_base = self._get_c_type(base)
-                lines.append(f"typedef struct {{ {c_base} data[{d1}]; }} {typedef_name};")
-                continue
+        def deps_of(node_id: str) -> List[str]:
+            kind, payload = nodes[node_id]
+            out: List[str] = []
+            if kind == "struct":
+                for f_type in structs[payload].values():
+                    ft = f_type.strip()
+                    if "[" in ft:
+                        if f"wrap:{ft}" in nodes:
+                            out.append(f"wrap:{ft}")
+                    elif ft.startswith("struct "):
+                        tgt = ft.split()[1]
+                        if f"struct:{tgt}" in nodes:
+                            out.append(f"struct:{tgt}")
+            else:  # wrapper
+                base = re.sub(r"\[\d+\]", "", payload).strip()
+                if base.startswith("struct "):
+                    tgt = base.split()[1]
+                    if f"struct:{tgt}" in nodes:
+                        out.append(f"struct:{tgt}")
+            return out
 
+        emitted: List[str] = []
+        seen: set = set()
+
+        def visit(node_id: str, stack: set) -> None:
+            if node_id in seen or node_id in stack:
+                return
+            stack.add(node_id)
+            for d in deps_of(node_id):
+                visit(d, stack)
+            stack.discard(node_id)
+            seen.add(node_id)
+            emitted.append(node_id)
+
+        for node_id in nodes:
+            visit(node_id, set())
+
+        lines: List[str] = ["// --- Value-Semantics Type Definitions ---"]
+        for node_id in emitted:
+            kind, payload = nodes[node_id]
+            if kind == "struct":
+                lines.extend(self._struct_def_lines(payload, structs[payload]))
+            else:
+                lines.append(self._wrapper_def_line(payload, self.array_types[payload]))
         return "\n".join(lines)
-
-    def _emit_struct_definitions(self, structs: Dict[str, Dict[str, str]]) -> str:
-        if not structs:
-            return ""
-
-        lines: List[str] = ["// --- User Struct Definitions ---"]
-        for s_name, fields in structs.items():
-            lines.append(f"typedef struct {s_name} {{")
-            for f_name, f_type in fields.items():
-                c_type = self._get_c_type(f_type)
-                lines.append(f"    {c_type} {f_name};")
-            lines.append(f"}} {s_name};\n")
-
-        return "\n".join(lines).strip()
 
     def _emit_global_variables(self, globals_list: List[Tuple[str, str, Optional[Any]]]) -> str:
         if not globals_list:

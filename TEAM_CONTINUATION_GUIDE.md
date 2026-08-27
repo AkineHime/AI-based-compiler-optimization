@@ -13,7 +13,7 @@ The compiler frontend, intermediate representation, static feature extractor, 5-
 src/minic/
 ├── frontend/             # [Person A - Done] Lexer, Parser, AST Nodes, Semantic Analyzer, ASTPrinter
 ├── ir/                   # [Person A - Done] TAC Opcodes/Operands, CFG, Dominators, Natural Loops, IRPrinter
-├── features/             # [Person A - Done] 18-metric Static Feature Extractor
+├── features/             # [Person A - Done] 19-metric Static Feature Extractor
 ├── optimizer/            # [Person B - Done] 5 Passes + 5-Bit PassManager
 │   ├── constant_folding.py   # Pass 1: Constant folding, propagation & branch simplification
 │   ├── dce.py                # Pass 2: Dead code elimination via backward liveness & unreachable pruning
@@ -40,7 +40,7 @@ ast = Parser(Lexer(source).tokenize(), source).parse()
 SemanticAnalyzer(source).analyze(ast)
 tac_base = IRGenerator().generate(ast)
 
-# 2. Extract 18 Static ML Features
+# 2. Extract 19 Static ML Features
 features = FeatureExtractor().extract(ast, tac_base)
 
 # 3. Optimize with any of the 64 combinations (0 to 63)
@@ -61,7 +61,7 @@ c_code = CEmitter().emit(opt_tac)
 ```mermaid
 flowchart TD
     subgraph Offline_Pipeline["Offline Pipeline (Dataset Generation & ML)"]
-        BM["MiniC Benchmarks (Person D)"] --> FE["Extract 18 Static Features"]
+        BM["MiniC Benchmarks (Person D)"] --> FE["Extract 19 Static Features"]
         BM --> SW["64-Combo Sweep (Person B Optimizer + Codegen)"]
         SW --> GCC["gcc -O0 Compile & Time (20 runs, drop 3 warmups)"]
         FE --> DS["data/benchmark_dataset.csv (2,240 rows)"]
@@ -134,7 +134,7 @@ To build and test the ML training pipeline before Person D finishes all 35 bench
 ### Step 3: Automated 64-Combo Sweeper (`src/minic/harness/sweeper.py`)
 Iterates over all benchmark programs and sweeps all 64 optimization combinations:
 1. For each `.mc` file in `benchmarks/`:
-   - Parse and extract 18 static features.
+   - Parse and extract 19 static features.
    - For `combo` in `0..63`:
      - Optimize TAC using `optimize_program(tac, combo)`.
      - Emit C source with `CEmitter().emit(opt_tac)`.
@@ -145,7 +145,7 @@ Iterates over all benchmark programs and sweeps all 64 optimization combinations
 
 #### Dataset Column Schema:
 ```csv
-program_id,category,total_instructions,basic_block_count,loop_count,max_loop_depth,branch_count,branch_density,arithmetic_ops_count,multiplication_count,constant_load_count,array_access_count,array_2d_access_count,struct_access_count,function_call_count,recursive_call_count,variable_count,string_ops_count,instruction_density_in_loops,cyclomatic_complexity,combo_id,flag_cf,flag_dce,flag_cse,flag_licm,flag_sr,median_time_ms,speedup_ratio
+program_id,category,total_instructions,basic_block_count,loop_count,max_loop_depth,branch_count,branch_density,arithmetic_ops_count,multiplication_count,constant_load_count,array_access_count,array_2d_access_count,struct_access_count,function_call_count,recursive_call_count,named_variable_count,temp_variable_count,string_ops_count,instruction_density_in_loops,cyclomatic_complexity,combo_id,flag_cf,flag_dce,flag_cse,flag_licm,flag_sr,median_time_ms,speedup_ratio
 ```
 
 ---
@@ -155,11 +155,11 @@ Create `src/minic/ml/train.py`, `src/minic/ml/model.py`, and `src/minic/ml/predi
 
 #### Crucial Safeguard: GroupKFold Cross-Validation
 * **MUST USE `GroupKFold(n_splits=5)` grouped strictly by `program_id`.**
-* **Why:** Standard random splits leak data because 64 rows share the exact same 18 static features. `GroupKFold` guarantees entire programs are held out during training and validation.
+* **Why:** Standard random splits leak data because 64 rows share the exact same 19 static features. `GroupKFold` guarantees entire programs are held out during training and validation.
 
 #### Model Training:
 1. Train a `RandomForestRegressor` / `GradientBoostingRegressor` to predict `speedup_ratio`.
-   $$X = [\text{18 Static Features}, \text{flag-cf}, \text{flag-dce}, \text{flag-cse}, \text{flag-licm}, \text{flag-sr}]$$
+   $$X = [\text{19 Static Features}, \text{flag-cf}, \text{flag-dce}, \text{flag-cse}, \text{flag-licm}, \text{flag-sr}]$$
 2. Save trained model to `data/trained_model.pkl` using `pickle` / `joblib`.
 
 #### Online Recommendation Function (`src/minic/ml/predictor.py`):
@@ -194,7 +194,7 @@ python3 -m demo.cli benchmark canonical_example.mc
 
 #### 2. Streamlit Web App (`demo/app.py`):
 - **Left Panel:** MiniC source code editor + syntax tree / CFG viewer.
-- **Middle Panel:** 18 static features radar chart + loop depth metrics.
+- **Middle Panel:** 19 static features radar chart + loop depth metrics.
 - **Right Panel:** ML recommendation card, before/after TAC comparison, live execution speedup bar chart.
 
 ---
@@ -227,7 +227,7 @@ python3 -m src.minic.driver canonical_example.mc --tree
 # 3. View visual CFG flowcharts
 python3 -m src.minic.driver canonical_example.mc --cfg
 
-# 4. View extracted 18 static features (JSON)
+# 4. View extracted 19 static features (JSON)
 python3 -m src.minic.driver canonical_example.mc --features
 
 # 5. Optimize with combo 63 and run

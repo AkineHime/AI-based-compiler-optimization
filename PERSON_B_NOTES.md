@@ -51,6 +51,10 @@ Canonical order CF → CSE → LICM → SR → DCE. `combo 0` = untouched baseli
    *local* in each function, so a global was never actually shared. A program
    using a global counter returned 10 instead of 20 for all 64 combos. Globals
    are now excluded from per-function local declarations.
+7. **Codegen — typedef ordering.** Array/string wrappers were emitted before the
+   user structs they may contain (`typedef struct { Pt data[3]; } arr_Pt_3;`
+   before `Pt`), and structs were not ordered among themselves. All struct and
+   wrapper typedefs are now emitted in dependency (topological) order.
 
 `PassManager.optimize_program` computes the program's global-name set once and
 threads it into CSE / LICM / DCE. All pass entry points keep a default empty
@@ -82,6 +86,31 @@ threads it into CSE / LICM / DCE. All pass entry points keep a default empty
 * LICM hoists temporaries only (no dominance analysis for named vars).
 * Strength reduction fires only on `i = i ± c` / staged `t = i ± c; i = t`
   induction variables with a literal multiplier.
+
+## Upstream gap flagged for Person A (front end / IR gen — NOT touched here)
+
+`ir_generator._lower_expr` types the temp for every `ArrayAccessExpr` and
+`FieldAccessExpr` as `int` regardless of the real element/field type, and an
+assignment whose target is a *nested* aggregate lvalue (`a[i].f = v`,
+`s.g.h = v`) is lowered as a read into a temporary copy followed by
+`SET_FIELD` on that copy — the write never reaches the array element / nested
+struct. Consequence: programs with **arrays of structs**, **structs containing
+structs**, or **structs containing arrays** do not compile / do not round-trip.
+Minimal repros:
+
+```c
+struct Pt { int x; int y; };
+int main() { struct Pt ps[2]; ps[0].x = 1; return ps[0].x; }   // -> C type error
+
+struct I { int a; }; struct O { struct I lo; };
+int main() { struct O o; o.lo.a = 5; return o.lo.a; }          // -> C type error
+```
+
+The canonical example and the current benchmark set only use scalar struct
+fields and scalar array elements, so this does not affect the 64-combo sweeps —
+but Person D's struct-heavy benchmarks may hit it. Fix belongs in
+`src/minic/ir/ir_generator.py` (type-carrying `new_temp`, plus a
+read-modify-write chain for compound-target assignments).
 
 ## Run
 
