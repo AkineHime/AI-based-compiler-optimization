@@ -17,7 +17,7 @@
 
 The compiler frontend, IR, static feature extractor, 32-combo optimization engine,
 C codegen, timing harness, 64-combo sweep, and ML recommender are operational and
-covered by **43 passing unit/integration tests** (`python -m pytest -q`).
+covered by **39 tests + 12 subtests** (`python -m pytest -q`, all green).
 
 `src/minic/harness/` (compiler, timer, sweeper, report, ground_truth, plot),
 `src/minic/ml/` (dataset, model, train, predictor), `demo/cli.py`,
