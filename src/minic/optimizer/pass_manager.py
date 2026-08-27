@@ -42,7 +42,7 @@ class PassManager:
 
         # 1. Constant Folding (Bit 0)
         if mask & 1:
-            optimized = constant_folding_pass(optimized)
+            optimized = constant_folding_pass(optimized, g)
 
         # 2. Common Subexpression Elimination (Bit 2)
         if mask & 4:

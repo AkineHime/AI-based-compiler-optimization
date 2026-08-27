@@ -8,8 +8,12 @@ from ..ir.cfg import build_cfg_for_function, CFG
 from ._util import wrap32, c_div, c_mod
 
 
-def constant_folding_pass(func: TACFunction) -> TACFunction:
-    """Performs constant folding, constant propagation, and branch simplification on a function."""
+def constant_folding_pass(func: TACFunction, global_names: frozenset = frozenset()) -> TACFunction:
+    """Performs constant folding, constant propagation, and branch simplification on a function.
+
+    ``global_names`` are excluded from the whole-function immutable-constant
+    analysis (another function could rewrite a global).
+    """
     changed = True
     max_iterations = 20
     iteration = 0
@@ -20,13 +24,19 @@ def constant_folding_pass(func: TACFunction) -> TACFunction:
         changed = False
         iteration += 1
 
+        # A variable assigned exactly once in the whole function, with a literal
+        # RHS, and never read before that point, holds that constant everywhere
+        # -- including inside loops.  These survive the block-boundary reset.
+        immutable: Dict[str, Constant] = _find_immutable_constants(
+            optimized_func.instructions, global_names)
+
         # Step 1: Forward constant propagation and expression evaluation
         new_instructions: List[TACInstruction] = []
-        
+
         # Temp constants map (SSA-like temporaries)
         temp_constants: Dict[str, Constant] = {}
         # Block-local variable constants
-        var_constants: Dict[str, Constant] = {}
+        var_constants: Dict[str, Constant] = dict(immutable)
 
         for inst in optimized_func.instructions:
             op = inst.opcode
@@ -34,6 +44,7 @@ def constant_folding_pass(func: TACFunction) -> TACFunction:
             # Reset local var constants on control flow targets/jumps
             if op in (Opcode.LABEL, Opcode.JUMP, Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE, Opcode.CALL):
                 var_constants.clear()
+                var_constants.update(immutable)
 
             # Substitute operands from known constants
             src1 = _substitute_constant(inst.src1, temp_constants, var_constants)
@@ -133,6 +144,53 @@ def constant_folding_pass(func: TACFunction) -> TACFunction:
         optimized_func.instructions = new_instructions
 
     return optimized_func
+
+
+def _operand_names(inst: TACInstruction):
+    for s in (inst.src1, inst.src2, inst.src3):
+        if isinstance(s, (Var, Temp)):
+            yield str(s)
+
+
+def _find_immutable_constants(instructions: List[TACInstruction],
+                              global_names: frozenset = frozenset()) -> Dict[str, Constant]:
+    """Vars assigned once, from a literal, and not read beforehand."""
+    assign_count: Dict[str, int] = {}
+    literal_rhs: Dict[str, Constant] = {}
+    read_before_write: set = set()
+    seen_written: set = set()
+
+    _VALUE_DEFS = (
+        Opcode.ASSIGN, Opcode.ADD, Opcode.SUB, Opcode.MUL, Opcode.DIV, Opcode.MOD,
+        Opcode.EQ, Opcode.NE, Opcode.LT, Opcode.LE, Opcode.GT, Opcode.GE,
+        Opcode.LOGIC_AND, Opcode.LOGIC_OR, Opcode.NEG, Opcode.LOGIC_NOT,
+        Opcode.LOAD_ARR_1D, Opcode.LOAD_ARR_2D, Opcode.GET_FIELD, Opcode.CALL,
+    )
+    for inst in instructions:
+        for name in _operand_names(inst):
+            if name not in seen_written:
+                read_before_write.add(name)
+
+        if inst.opcode in _VALUE_DEFS and isinstance(inst.dst, (Var, Temp)):
+            n = str(inst.dst)
+            assign_count[n] = assign_count.get(n, 0) + 1
+            seen_written.add(n)
+            if inst.opcode == Opcode.ASSIGN and isinstance(inst.dst, Var) \
+                    and isinstance(inst.src1, Constant) \
+                    and inst.src1.type_str in ("int", "char"):
+                literal_rhs[n] = inst.src1
+        # aggregate writes disqualify their base
+        if inst.opcode in (Opcode.STORE_ARR_1D, Opcode.STORE_ARR_2D, Opcode.SET_FIELD) \
+                and isinstance(inst.dst, (Var, Temp)):
+            n = str(inst.dst)
+            assign_count[n] = assign_count.get(n, 0) + 2  # force-disqualify
+
+    return {
+        n: c for n, c in literal_rhs.items()
+        if assign_count.get(n, 0) == 1
+        and n not in read_before_write
+        and n not in global_names
+    }
 
 
 def _substitute_constant(operand: Any, temp_constants: Dict[str, Constant], var_constants: Dict[str, Constant]) -> Any:

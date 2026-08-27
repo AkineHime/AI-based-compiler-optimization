@@ -40,3 +40,7 @@ data/raw_measurements_temp/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Person C runtime artifacts
+data/_calib.csv
+data/*.pkl

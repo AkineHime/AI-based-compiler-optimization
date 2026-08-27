@@ -1,0 +1,11 @@
+# Person A + B: standard library only (Python 3.9+).
+# Person C (timing harness, ML, demo):
+numpy>=1.24
+scikit-learn>=1.3
+pandas>=2.0
+
+# Optional, for the plots in the results report / notebooks:
+matplotlib>=3.7
+
+# Test runner
+pytest>=7.0

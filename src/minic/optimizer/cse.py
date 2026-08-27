@@ -22,9 +22,25 @@ def cse_pass(func: TACFunction, global_names: frozenset = frozenset()) -> TACFun
     for block in cfg.blocks:
         # expr_key -> (result_operand, dependencies_set)
         available_exprs: Dict[str, Tuple[Operand, Set[str]]] = {}
+        # copy propagation: name -> the operand it currently holds a verbatim
+        # copy of.  Temps are single-assignment; a scalar Var entry is dropped
+        # (here and wherever it is a target) as soon as anything rewrites it.
+        alias: Dict[str, Operand] = {}
+
+        def _kill_alias(name: str) -> None:
+            alias.pop(name, None)
+            for k in [k for k, v in alias.items()
+                      if isinstance(v, (Temp, Var)) and str(v) == name]:
+                alias.pop(k, None)
 
         for inst in block.instructions:
             op = inst.opcode
+
+            # Resolve source operands through known copies before anything else,
+            # so `t3 = t1 ; t3 % M` is seen as `t1 % M` and `v = t2 ; ... + v`
+            # becomes `... + t2` (letting DCE drop the copy).
+            inst = _resolve_operands(inst, alias)
+
             expr_key, deps = _get_expression_key(inst)
 
             if expr_key is not None and expr_key in available_exprs:
@@ -32,10 +48,22 @@ def cse_pass(func: TACFunction, global_names: frozenset = frozenset()) -> TACFun
                 prev_dst, _ = available_exprs[expr_key]
                 new_inst = TACInstruction(Opcode.ASSIGN, dst=inst.dst, src1=prev_dst, annotation="CSE")
                 new_instructions.append(new_inst)
-
-                # Invalidate if destination variable overwrites a dependency
+                if isinstance(inst.dst, (Temp, Var)):
+                    _kill_alias(str(inst.dst))
+                    if _is_scalar(inst.dst) and isinstance(prev_dst, (Temp, Constant)):
+                        alias[str(inst.dst)] = prev_dst
                 _invalidate_redefined_var(inst.dst, available_exprs)
                 continue
+
+            # Update the copy map for this instruction's destination.
+            if isinstance(inst.dst, (Temp, Var)):
+                _kill_alias(str(inst.dst))
+                if op == Opcode.ASSIGN and _is_scalar(inst.dst) \
+                        and (isinstance(inst.src1, Constant) or _is_scalar(inst.src1)):
+                    alias[str(inst.dst)] = inst.src1
+            if op in (Opcode.STORE_ARR_1D, Opcode.STORE_ARR_2D, Opcode.SET_FIELD) \
+                    and isinstance(inst.dst, (Temp, Var)):
+                _kill_alias(str(inst.dst))
 
             # If not found or not an eligible expr, keep instruction
             new_instructions.append(inst)
@@ -49,6 +77,36 @@ def cse_pass(func: TACFunction, global_names: frozenset = frozenset()) -> TACFun
 
     optimized_func.instructions = new_instructions
     return optimized_func
+
+
+def _is_scalar(op: Any) -> bool:
+    """A Temp/Var whose value is a scalar -- safe to treat as a verbatim copy.
+    Aggregates (``struct`` / array) are written through SET_FIELD / STORE_ARR
+    and must never be alias-resolved."""
+    return (isinstance(op, (Temp, Var))
+            and "[" not in op.type_str
+            and not op.type_str.startswith("struct "))
+
+
+def _resolve(op: Any, alias: Dict[str, Operand]) -> Any:
+    """Follow a copy chain to its representative operand."""
+    seen = set()
+    while isinstance(op, (Temp, Var)) and str(op) in alias and str(op) not in seen:
+        seen.add(str(op))
+        op = alias[str(op)]
+    return op
+
+
+def _resolve_operands(inst: TACInstruction, alias: Dict[str, Operand]) -> TACInstruction:
+    if not alias:
+        return inst
+    ns1 = _resolve(inst.src1, alias)
+    ns2 = _resolve(inst.src2, alias)
+    ns3 = _resolve(inst.src3, alias)
+    if ns1 is inst.src1 and ns2 is inst.src2 and ns3 is inst.src3:
+        return inst
+    return TACInstruction(opcode=inst.opcode, dst=inst.dst,
+                          src1=ns1, src2=ns2, src3=ns3, annotation=inst.annotation)
 
 
 def _get_operand_repr(op: Any) -> str:
