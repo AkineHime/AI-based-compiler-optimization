@@ -16,11 +16,13 @@ class CEmitter:
     def __init__(self):
         self.array_types: Dict[str, str] = {}  # type_spec_str -> c_typedef_name
         self.struct_names: Set[str] = set()
+        self.global_names: Set[str] = set()
 
     def emit(self, program: TACProgram) -> str:
         """Emit complete C99 source string for the given TACProgram."""
         self.array_types.clear()
         self.struct_names = set(program.structs.keys())
+        self.global_names = {g[0] for g in program.global_vars}
 
         # Collect all array/string types from structs, globals, functions
         self._collect_types(program)
@@ -211,15 +213,19 @@ class CEmitter:
         local_vars: Dict[str, str] = {}  # name -> c_type
 
         for name, type_str in func.local_types.items():
-            if name not in param_names:
+            if name not in param_names and name not in self.global_names:
                 local_vars[name] = self._get_c_type(type_str)
 
-        # Also inspect any undeclared temporaries or operands in instructions
+        # Also inspect any undeclared temporaries or operands in instructions.
+        # Globals must NOT be redeclared here -- a local shadow would silently
+        # break sharing between functions.
         for inst in func.instructions:
             for op in (inst.dst, inst.src1, inst.src2, inst.src3):
                 if isinstance(op, Temp) and str(op) not in local_vars and str(op) not in param_names:
                     local_vars[str(op)] = self._get_c_type(op.type_str)
-                elif isinstance(op, Var) and op.name not in local_vars and op.name not in param_names:
+                elif (isinstance(op, Var) and op.name not in local_vars
+                      and op.name not in param_names
+                      and op.name not in self.global_names):
                     local_vars[op.name] = self._get_c_type(op.type_str)
 
         # Emit declarations (zero-initialized for safety)

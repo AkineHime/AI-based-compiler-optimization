@@ -6,6 +6,7 @@ from .dce import dce_pass
 from .cse import cse_pass
 from .licm import licm_pass
 from .strength_reduction import strength_reduction_pass
+from ._util import program_global_names
 
 
 PASS_FLAGS = {
@@ -29,13 +30,15 @@ def get_pass_names(combo_mask: int) -> List[str]:
 class PassManager:
     """Orchestrates the 5 toggleable optimization passes over TAC IR."""
 
-    def __init__(self, combo_mask: int = 0):
+    def __init__(self, combo_mask: int = 0, global_names: frozenset = frozenset()):
         self.combo_mask = combo_mask
+        self.global_names = global_names
 
     def optimize_function(self, func: TACFunction) -> TACFunction:
         """Apply enabled optimization passes in canonical order: CF -> CSE -> LICM -> SR -> DCE."""
         optimized = copy.deepcopy(func)
         mask = self.combo_mask
+        g = self.global_names
 
         # 1. Constant Folding (Bit 0)
         if mask & 1:
@@ -43,11 +46,11 @@ class PassManager:
 
         # 2. Common Subexpression Elimination (Bit 2)
         if mask & 4:
-            optimized = cse_pass(optimized)
+            optimized = cse_pass(optimized, g)
 
         # 3. Loop-Invariant Code Motion (Bit 3)
         if mask & 8:
-            optimized = licm_pass(optimized)
+            optimized = licm_pass(optimized, g)
 
         # 4. Strength Reduction (Bit 4)
         if mask & 16:
@@ -55,13 +58,14 @@ class PassManager:
 
         # 5. Dead Code Elimination (Bit 1 - run last as cleanup)
         if mask & 2:
-            optimized = dce_pass(optimized)
+            optimized = dce_pass(optimized, g)
 
         return optimized
 
     def optimize_program(self, program: TACProgram) -> TACProgram:
         """Apply optimizations to all functions in the TACProgram."""
         optimized_prog = copy.deepcopy(program)
+        self.global_names = program_global_names(program)
         optimized_prog.functions = [self.optimize_function(f) for f in program.functions]
         return optimized_prog
 

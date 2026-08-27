@@ -1,81 +1,91 @@
 # Person B — Optimization Passes + TAC→C Codegen
 
-Status: **merged**. Two implementations existed after parallel work
-(`1e66807` and `965f0a8`); this file records what the merged `main` contains and
-what to watch.
+Status: **merged, then hardened**. Two parallel implementations (`1e66807`,
+`965f0a8`) were merged; `965f0a8`'s pass engine + codegen is the base. The
+correctness bugs listed in the earlier revision of this file have now been
+**fixed in place** (the engine was kept — nothing was rewritten from scratch).
 
-## What `main` uses
+## Engine on `main`
 
-The **pass engine and codegen are from `965f0a8`** (`*_pass(func) -> func`
-functions, `PassManager` / `optimize_program(prog, mask)`, `CEmitter().emit()`):
+`*_pass(func, global_names=frozenset()) -> func` functions, orchestrated by
+`PassManager` / `optimize_program(prog, mask)`; codegen via `CEmitter().emit(prog)`.
 
-| Area | Module | Entry point |
+| Bit | Pass | Module |
 |---|---|---|
-| Constant folding + propagation + algebraic simplification | `src/minic/optimizer/constant_folding.py` | `constant_folding_pass` |
-| Dead code elimination (liveness + unreachable blocks + label/alloc cleanup) | `src/minic/optimizer/dce.py` | `dce_pass` |
-| Common subexpression elimination (local value numbering, incl. loads/fields) | `src/minic/optimizer/cse.py` | `cse_pass` |
-| Loop-invariant code motion | `src/minic/optimizer/licm.py` | `licm_pass` |
-| Strength reduction | `src/minic/optimizer/strength_reduction.py` | `strength_reduction_pass` |
-| Pass controller | `src/minic/optimizer/pass_manager.py` | `optimize_program(prog, mask)` |
-| TAC→C codegen (wrapper structs, C99 compound literals) | `src/minic/codegen/c_emitter.py` | `CEmitter().emit(prog)` |
+| `1` | Constant folding + propagation + algebraic simplification | `optimizer/constant_folding.py` |
+| `2` | Dead code elimination (liveness + unreachable blocks + label/alloc cleanup) | `optimizer/dce.py` |
+| `4` | Common subexpression elimination (local value numbering) | `optimizer/cse.py` |
+| `8` | Loop-invariant code motion | `optimizer/licm.py` |
+| `16` | Strength reduction | `optimizer/strength_reduction.py` |
 
-Flag bits: `1`=CF, `2`=DCE, `4`=CSE, `8`=LICM, `16`=SR. Canonical order
-CF → CSE → LICM → SR → DCE (single pass, not iterated to a fixed point).
-`combo 0` is the untouched baseline.
+Canonical order CF → CSE → LICM → SR → DCE. `combo 0` = untouched baseline.
+`optimizer/_util.py` holds the shared 32-bit / C-arithmetic helpers and the
+"which globals may a call clobber" query.
 
-Correctness sweep: `tests/test_optimizer.py` runs all 64 combos through
-`gcc -O0` for the canonical program (→83), a 2×2 matrix multiply (→134) and a
-struct particle sim (→55). All green.
+## Fixes applied on top of `965f0a8`
+
+1. **Strength reduction — pre-header seed.** `_find_biv_init_val` scanned the
+   whole function backward and picked up the *in-loop* update of the induction
+   variable, seeding `sr_temp` from an undefined temporary. Proven wrong: a loop
+   starting at `i = 3` returned 84 instead of 168 for every SR-enabled combo.
+   Now the seed is `sr_temp = biv * K` emitted in the pre-header, where `biv`
+   still holds its pre-loop value. Identity (`is`) comparisons replace value
+   (`==`) comparisons in the splice. 32-bit wrap on the step constant.
+2. **LICM — trapping hoists.** `DIV`/`MOD` are hoisted only when the divisor is
+   a known non-zero constant (a pre-header runs even on a zero-trip loop).
+   Hoisting is now restricted to temporaries — a named variable can be read
+   before it is written across iterations, and moving its def to the pre-header
+   would change that read. When the loop contains a call, operands that name a
+   global are treated as variant.
+3. **Constant folding — C integer semantics.** Integer folds wrap to 32-bit
+   two's-complement; `/` truncates toward zero; `%` takes the sign of the
+   dividend. Float arithmetic is no longer folded (rounding can't then diverge
+   from the runtime). Algebraic identities (`x*0`, `x*1`, …) apply to integer
+   operands only (they don't hold for NaN/inf).
+4. **CSE — globals across calls.** A `CALL` now invalidates cached arithmetic
+   expressions that read a global, not just cached loads/field-reads.
+5. **DCE — globals at exit.** Globals are live on every function exit and their
+   definitions are never deleted.
+6. **Codegen — global shadowing (found while testing the above).** `CEmitter`
+   was declaring every referenced `Var` — including globals — as a zero-init
+   *local* in each function, so a global was never actually shared. A program
+   using a global counter returned 10 instead of 20 for all 64 combos. Globals
+   are now excluded from per-function local declarations.
+
+`PassManager.optimize_program` computes the program's global-name set once and
+threads it into CSE / LICM / DCE. All pass entry points keep a default empty
+`global_names`, so the existing single-arg call sites in `tests/` still work.
+
+## Tests
+
+* `tests/test_optimizer.py` (from `965f0a8`) — 64-combo `gcc -O0` sweeps for the
+  canonical program (→83), a 2×2 matrix multiply (→134), a struct particle sim
+  (→55).
+* `tests/test_pass_regressions.py` (new) — 8 tricky programs, each run under all
+  64 combos with **combo 0 as the oracle**: strength reduction from a non-zero
+  start, nested-loop SR, LICM over a zero-trip divide, LICM invariant hoist,
+  32-bit overflow folding, and three global-variable programs (shared counter,
+  "dead-looking" store to a global).
+* `tests/test_passes.py`, `tests/test_codegen.py` — per-pass and codegen units.
 
 ## Retained from `1e66807`
 
-* **`variable_count` feature split** into `named_variable_count` and
-  `temp_variable_count` — `src/minic/features/extractor.py`, feature vector now
-  **19 wide**. `965f0a8` did not touch the extractor. Person C's dataset schema
-  must use the two new columns instead of `variable_count`.
-  Covered by `tests/test_features.py`.
-* **`src/minic/pipeline.py`** — `source_to_tac`, `source_to_c(src, combo)`,
-  `compile_and_run(...) -> RunResult`. Convenience wrapper for Person C's
-  "features → predict → optimize → codegen → compile → run" demo path.
-* **Two Part-A import fixes** for Python 3.13 (`Any` in `lexer.py`, `Tuple` in
-  `ir/tac.py`).
+* `variable_count` feature split → `named_variable_count` + `temp_variable_count`
+  (`features/extractor.py`, vector now 19-wide; `965f0a8` didn't touch it).
+  Person C's dataset schema should use the two new columns.
+* `src/minic/pipeline.py` — `source_to_c(src, combo)`, `compile_and_run(...)`.
+* Python 3.13 import fixes (`Any` in `lexer.py`, `Tuple` in `ir/tac.py`).
 
-`1e66807`'s alternative pass implementations (`optimizer/_util.py`,
-`run(func, prog)` signature, fix-point pass manager) are **not** on `main` but
-remain in history if any of the items below need a reference fix.
+## Still limited (not bugs — reduced scope, safe)
 
-## Review notes on the merged passes (latent — current benchmarks don't hit them)
+* CSE stays basic-block-local.
+* LICM hoists temporaries only (no dominance analysis for named vars).
+* Strength reduction fires only on `i = i ± c` / staged `t = i ± c; i = t`
+  induction variables with a literal multiplier.
 
-1. **Strength reduction — initial-value scan.** `_find_biv_init_val` walks
-   `reversed(func.instructions)` and returns the first `ASSIGN` to the induction
-   variable. For this front end's staged update (`t = i + c; i = t`) that is the
-   in-loop `i = t`, so the pre-header seed becomes `sr = t * k` referencing a
-   temp not yet computed. Not triggered today because no benchmark lowers to an
-   explicit `IV * const` in TAC (2-D indexing hides the multiply). Fix before any
-   strength-reduction-friendly benchmark lands.
-2. **LICM — no zero-divisor guard.** A hoistable `t = x / y` / `x % y` moved into
-   the pre-header runs even on a zero-trip loop; if `y == 0` there it traps where
-   the baseline would not. Guard: only hoist DIV/MOD when the divisor is a
-   non-zero constant.
-3. **Constant folding — 32-bit semantics.** Folding uses Python big ints. C
-   `int` overflow wraps at runtime, so a folded constant can disagree with the
-   unoptimized baseline for expressions that overflow 32 bits. Also `%` follows
-   Python's sign-of-divisor rule vs C's sign-of-dividend for negatives. Wrap
-   results to `int32` and use truncating division/remainder.
-4. **CSE — globals across calls.** On `CALL` only load/field expressions are
-   invalidated, not arithmetic over globals: `t1 = g + 1; f(); t2 = g + 1`
-   reuses `t1` even if `f` writes `g`.
-5. **DCE — globals at exit.** Exit-block `live_out` is empty; a trailing
-   `g = expr` to a global that isn't re-read locally could be deleted.
-
-Items 3–5 only matter once benchmarks use mutable globals or wide-integer
-arithmetic; MiniC programs so far are self-contained functions returning small
-ints.
-
-## How to run
+## Run
 
 ```bash
-python -m src.minic.driver canonical_example.mc --optimize 63 --emit-c
 python -m src.minic.driver canonical_example.mc --optimize 63 --run
-python -m pytest tests/test_optimizer.py -q   # the 64-combo sweep
+python -m pytest tests/test_optimizer.py tests/test_pass_regressions.py -q
 ```

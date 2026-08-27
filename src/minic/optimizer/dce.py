@@ -7,8 +7,13 @@ from ..ir.tac import (
 from ..ir.cfg import build_cfg_for_function, CFG, BasicBlock
 
 
-def dce_pass(func: TACFunction) -> TACFunction:
-    """Performs Dead Code Elimination (DCE) using backward liveness analysis, unreachable block removal, and unused local pruning."""
+def dce_pass(func: TACFunction, global_names: frozenset = frozenset()) -> TACFunction:
+    """Performs Dead Code Elimination (DCE) using backward liveness analysis, unreachable block removal, and unused local pruning.
+
+    ``global_names`` lists module-level variables; they are treated as live on
+    every function exit and their definitions are never removed, since another
+    function (or the program's result) may observe them.
+    """
     optimized_func = copy.deepcopy(func)
     changed = True
     iteration = 0
@@ -27,7 +32,7 @@ def dce_pass(func: TACFunction) -> TACFunction:
             cfg = build_cfg_for_function(optimized_func)
 
         # Step 2: Backward liveness analysis
-        live_in, live_out = _compute_liveness(cfg)
+        live_in, live_out = _compute_liveness(cfg, global_names)
 
         # Step 3: Sweep blocks and eliminate dead instructions
         new_instructions: List[TACInstruction] = []
@@ -40,7 +45,7 @@ def dce_pass(func: TACFunction) -> TACFunction:
                 uses = _get_uses(inst)
                 has_side_effects = _has_side_effects(inst)
 
-                if not has_side_effects and defs:
+                if not has_side_effects and defs and defs.isdisjoint(global_names):
                     # If none of the defined variables are live, instruction is dead
                     if defs.isdisjoint(current_live):
                         changed = True
@@ -130,7 +135,7 @@ def _has_side_effects(inst: TACInstruction) -> bool:
     return False
 
 
-def _compute_liveness(cfg: CFG) -> Tuple[Dict[int, Set[str]], Dict[int, Set[str]]]:
+def _compute_liveness(cfg: CFG, global_names: frozenset = frozenset()) -> Tuple[Dict[int, Set[str]], Dict[int, Set[str]]]:
     """Iterative dataflow analysis for live variables."""
     use_map: Dict[int, Set[str]] = {}
     def_map: Dict[int, Set[str]] = {}
@@ -159,6 +164,9 @@ def _compute_liveness(cfg: CFG) -> Tuple[Dict[int, Set[str]], Dict[int, Set[str]
             new_out: Set[str] = set()
             for succ in block.successors:
                 new_out.update(live_in[succ.id])
+            # Globals are observable after the function returns.
+            if not block.successors:
+                new_out.update(global_names)
 
             # LiveIn[B] = Use[B] union (LiveOut[B] - Def[B])
             new_in = use_map[block.id] | (new_out - def_map[block.id])

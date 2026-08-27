@@ -5,6 +5,7 @@ from ..ir.tac import (
     Operand, Temp, Var, Constant, Label
 )
 from ..ir.cfg import build_cfg_for_function, CFG, BasicBlock, Loop
+from ._util import wrap32
 
 
 def strength_reduction_pass(func: TACFunction) -> TACFunction:
@@ -38,33 +39,27 @@ def strength_reduction_pass(func: TACFunction) -> TACFunction:
             sr_temp = Temp(id=max_temp_id, type_str="int")
             optimized_func.local_types[str(sr_temp)] = "int"
 
-            # Find reaching initial value of biv before loop
-            init_val = _find_biv_init_val(optimized_func, biv_name, header_inst)
-            step_val = step_const * mult_const
+            step_val = wrap32(step_const * mult_const)
 
-            # Preheader initialization instructions: sr_temp = init_val * mult_const
-            preheader_init: List[TACInstruction] = []
-            if isinstance(init_val, Constant):
-                preheader_init.append(
-                    TACInstruction(
-                        Opcode.ASSIGN,
-                        dst=sr_temp,
-                        src1=Constant(init_val.value * mult_const, "int"),
-                        annotation="SR Init"
-                    )
+            # Pre-header seed: sr_temp = biv * mult_const.  The pre-header is
+            # spliced in immediately before the loop header, i.e. *after* the
+            # induction variable's initialisation and *before* the back-edge
+            # target, so ``biv`` here still holds its pre-loop value.  (The old
+            # code scanned backward for an ASSIGN to biv and wrongly picked up
+            # the in-loop update, seeding sr_temp from an undefined temporary.)
+            preheader_init: List[TACInstruction] = [
+                TACInstruction(
+                    Opcode.MUL,
+                    dst=sr_temp,
+                    src1=Var(biv_name, "int"),
+                    src2=Constant(wrap32(mult_const), "int"),
+                    annotation="SR Init",
                 )
-            else:
-                preheader_init.append(
-                    TACInstruction(
-                        Opcode.MUL,
-                        dst=sr_temp,
-                        src1=init_val,
-                        src2=Constant(mult_const, "int"),
-                        annotation="SR Init"
-                    )
-                )
+            ]
 
-            # Step update instruction: sr_temp = sr_temp +/- step_val
+            # Step update instruction: sr_temp = sr_temp +/- step_val, kept
+            # adjacent to the biv update so the invariant sr_temp == biv*k holds
+            # at every use site.
             step_opcode = Opcode.ADD if is_addition else Opcode.SUB
             step_update_inst = TACInstruction(
                 step_opcode,
@@ -74,17 +69,18 @@ def strength_reduction_pass(func: TACFunction) -> TACFunction:
                 annotation="SR Step"
             )
 
-            # Rebuild instruction stream
+            # Rebuild instruction stream (identity comparisons: these objects all
+            # live inside optimized_func.instructions).
             new_instructions: List[TACInstruction] = []
             preheader_emitted = False
             biv_update_targets = update_insts.get(biv_name, [])
 
             for inst in optimized_func.instructions:
-                if inst == header_inst and not preheader_emitted:
+                if inst is header_inst and not preheader_emitted:
                     new_instructions.extend(preheader_init)
                     preheader_emitted = True
 
-                if inst == div_inst:
+                if inst is div_inst:
                     # Replace multiplication with copy from sr_temp
                     new_instructions.append(
                         TACInstruction(
@@ -97,7 +93,7 @@ def strength_reduction_pass(func: TACFunction) -> TACFunction:
                 else:
                     new_instructions.append(inst)
                     # Check if this is the BIV update instruction
-                    if any(inst == upd for upd in biv_update_targets):
+                    if any(inst is upd for upd in biv_update_targets):
                         new_instructions.append(step_update_inst)
 
             optimized_func.instructions = new_instructions
@@ -171,25 +167,13 @@ def _find_derived_induction_vars(
                     biv_name = inst.src1.name
                     step_c, is_add = bivs[biv_name]
                     mult_c = inst.src2.value
-                    if mult_c > 0:
+                    if mult_c != 0:
                         divs.append((inst, biv_name, step_c, mult_c, is_add))
                 elif isinstance(inst.src2, Var) and inst.src2.name in bivs and isinstance(inst.src1, Constant) and isinstance(inst.src1.value, int):
                     biv_name = inst.src2.name
                     step_c, is_add = bivs[biv_name]
                     mult_c = inst.src1.value
-                    if mult_c > 0:
+                    if mult_c != 0:
                         divs.append((inst, biv_name, step_c, mult_c, is_add))
 
     return divs
-
-
-def _find_biv_init_val(func: TACFunction, biv_name: str, header_inst: TACInstruction) -> Operand:
-    """Scan backward before loop header to find initial value assigned to BIV."""
-    for inst in reversed(func.instructions):
-        if inst == header_inst:
-            continue
-        if inst.opcode == Opcode.ASSIGN and isinstance(inst.dst, Var) and inst.dst.name == biv_name:
-            if isinstance(inst.src1, Operand):
-                return inst.src1
-            return Constant(0, "int")
-    return Constant(0, "int")

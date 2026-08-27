@@ -7,8 +7,13 @@ from ..ir.tac import (
 from ..ir.cfg import build_cfg_for_function, CFG, BasicBlock
 
 
-def cse_pass(func: TACFunction) -> TACFunction:
-    """Performs Common Subexpression Elimination (CSE) using Local Value Numbering per Basic Block."""
+def cse_pass(func: TACFunction, global_names: frozenset = frozenset()) -> TACFunction:
+    """Performs Common Subexpression Elimination (CSE) using Local Value Numbering per Basic Block.
+
+    ``global_names`` lists module-level variables; a ``CALL`` invalidates every
+    cached expression that reads one of them, since the callee may have written
+    it (locals and temporaries cannot alias in MiniC, so those stay valid).
+    """
     optimized_func = copy.deepcopy(func)
     cfg = build_cfg_for_function(optimized_func)
 
@@ -40,7 +45,7 @@ def cse_pass(func: TACFunction) -> TACFunction:
                 available_exprs[expr_key] = (inst.dst, deps)
 
             # Invalidate any expressions that depend on mutated variables
-            _process_mutations(inst, available_exprs)
+            _process_mutations(inst, available_exprs, global_names)
 
     optimized_func.instructions = new_instructions
     return optimized_func
@@ -126,7 +131,8 @@ def _invalidate_redefined_var(dst: Optional[Operand], available_exprs: Dict[str,
         available_exprs.pop(k, None)
 
 
-def _process_mutations(inst: TACInstruction, available_exprs: Dict[str, Tuple[Operand, Set[str]]]) -> None:
+def _process_mutations(inst: TACInstruction, available_exprs: Dict[str, Tuple[Operand, Set[str]]],
+                       global_names: frozenset = frozenset()) -> None:
     op = inst.opcode
 
     if op in (Opcode.STORE_ARR_1D, Opcode.STORE_ARR_2D):
@@ -144,8 +150,13 @@ def _process_mutations(inst: TACInstruction, available_exprs: Dict[str, Tuple[Op
             available_exprs.pop(k, None)
 
     elif op == Opcode.CALL:
-        # Function calls could modify arrays/globals
-        keys_to_remove = [k for k in available_exprs if "LOAD" in k or "GETFIELD" in k]
+        # A call may modify arrays/structs (via aggregate returns) and any
+        # global, so drop every load/field expression and every arithmetic
+        # expression that reads a global.
+        keys_to_remove = [
+            k for k, (_dst, deps) in available_exprs.items()
+            if "LOAD" in k or "GETFIELD" in k or (deps & global_names)
+        ]
         for k in keys_to_remove:
             available_exprs.pop(k, None)
 

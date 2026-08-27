@@ -5,6 +5,7 @@ from ..ir.tac import (
     Operand, Temp, Var, Constant, Label
 )
 from ..ir.cfg import build_cfg_for_function, CFG
+from ._util import wrap32, c_div, c_mod
 
 
 def constant_folding_pass(func: TACFunction) -> TACFunction:
@@ -147,24 +148,27 @@ def _substitute_constant(operand: Any, temp_constants: Dict[str, Constant], var_
 
 def _evaluate_binary_op(op: Opcode, v1: Any, v2: Any, t1: str, t2: str) -> Tuple[Optional[Any], str]:
     res_type = "float" if (t1 == "float" or t2 == "float") else "int"
+    # Only fold integer arithmetic. Float folding is skipped so the compile-time
+    # result can never disagree with the C runtime's rounding.
+    if res_type != "int" and op in (
+        Opcode.ADD, Opcode.SUB, Opcode.MUL, Opcode.DIV, Opcode.MOD
+    ):
+        return None, res_type
     try:
         if op == Opcode.ADD:
-            val = v1 + v2
+            val = wrap32(v1 + v2)
         elif op == Opcode.SUB:
-            val = v1 - v2
+            val = wrap32(v1 - v2)
         elif op == Opcode.MUL:
-            val = v1 * v2
+            val = wrap32(v1 * v2)
         elif op == Opcode.DIV:
             if v2 == 0:
                 return None, res_type
-            if res_type == "int":
-                val = int(v1 / v2)
-            else:
-                val = v1 / v2
+            val = wrap32(c_div(v1, v2))
         elif op == Opcode.MOD:
             if v2 == 0:
                 return None, res_type
-            val = int(v1 % v2) if res_type == "int" else None
+            val = wrap32(c_mod(v1, v2))
         elif op == Opcode.EQ:
             val = 1 if v1 == v2 else 0
             res_type = "int"
@@ -199,13 +203,21 @@ def _evaluate_binary_op(op: Opcode, v1: Any, v2: Any, t1: str, t2: str) -> Tuple
 
 def _evaluate_unary_op(op: Opcode, v: Any, t: str) -> Tuple[Optional[Any], str]:
     if op == Opcode.NEG:
-        return -v, t
+        if t == "float":
+            return None, t
+        return wrap32(-v), t
     elif op == Opcode.LOGIC_NOT:
         return (1 if v == 0 else 0), "int"
     return None, t
 
 
 def _simplify_algebraic(op: Opcode, dst: Optional[Operand], src1: Any, src2: Any) -> Optional[TACInstruction]:
+    # Identities like ``x * 0 -> 0`` do not hold for IEEE floats (NaN/inf), so
+    # only simplify when every constant operand is an integer.
+    for s in (src1, src2):
+        if isinstance(s, Constant) and s.type_str not in ("int", "char"):
+            return None
+
     # x + 0 -> x
     if op == Opcode.ADD:
         if isinstance(src2, Constant) and src2.value == 0:
