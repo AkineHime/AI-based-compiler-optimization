@@ -1,70 +1,129 @@
-"""Unit tests for TAC -> C code generation (Person B)."""
-import shutil
 import unittest
-
-from src.minic.frontend.lexer import Lexer
-from src.minic.frontend.parser import Parser
-from src.minic.frontend.sema import SemanticAnalyzer
-from src.minic.ir.ir_generator import IRGenerator
-from src.minic.codegen import emit_c
-from src.minic.codegen.c_emitter import parse_type, wrapper_name
-from src.minic.pipeline import source_to_c, compile_and_run
+import os
+import subprocess
+from src.minic.frontend import Lexer, Parser, SemanticAnalyzer
+from src.minic.ir import IRGenerator
+from src.minic.codegen import CEmitter
 
 
-def to_c(src: str, combo: int = 0) -> str:
-    toks = Lexer(src).tokenize()
-    ast = Parser(toks, src).parse()
-    SemanticAnalyzer(src).analyze(ast)
-    return emit_c(IRGenerator().generate(ast)) if combo == 0 else source_to_c(src, combo)
+class TestCEmitter(unittest.TestCase):
+    def _compile_and_run(self, code: str, expected_exit_code: int):
+        tokens = Lexer(code).tokenize()
+        ast = Parser(tokens, code).parse()
+        SemanticAnalyzer(code).analyze(ast)
+        tac = IRGenerator().generate(ast)
+        c_code = CEmitter().emit(tac)
 
+        c_file = "temp_test_codegen.c"
+        bin_file = "./temp_test_codegen"
 
-class TestWrapperNaming(unittest.TestCase):
-    def test_type_parsing(self):
-        self.assertEqual(wrapper_name(parse_type("int[3][3]")), "arr_int_3_3")
-        self.assertEqual(wrapper_name(parse_type("char[6]")), "str_6")
-        self.assertEqual(wrapper_name(parse_type("float[8]")), "arr_float_8")
-        self.assertFalse(parse_type("int").is_array)
-        self.assertEqual(parse_type("struct Point").c_base, "Point")
+        with open(c_file, "w") as f:
+            f.write(c_code)
 
+        try:
+            comp = subprocess.run(["gcc", "-O0", "-o", bin_file, c_file], capture_output=True, text=True)
+            self.assertEqual(comp.returncode, 0, f"GCC Compilation failed:\n{comp.stderr}\nEmitted C:\n{c_code}")
 
-class TestEmittedSource(unittest.TestCase):
-    def test_arrays_and_strings_are_wrapped(self):
-        src = ('int sum(int m[2][2]) { return m[0][0] + m[1][1]; }\n'
-               'int main() {\n'
-               '  char s[4] = "ab";\n'
-               '  int g[2][2];\n'
-               '  g[0][0] = 40; g[1][1] = 2; g[0][1] = 0; g[1][0] = 0;\n'
-               '  return sum(g);\n'
-               '}\n')
-        c = to_c(src)
-        self.assertIn("typedef struct { int data[2][2]; } arr_int_2_2;", c)
-        self.assertIn("typedef struct { char data[4]; } str_4;", c)
-        self.assertIn("int sum(arr_int_2_2 m)", c)          # struct-by-value param
-        self.assertIn(".data = \"ab\"", c)                   # C99 compound literal
-        self.assertIn("m.data[", c)                          # wrapped access
+            run = subprocess.run([bin_file])
+            self.assertEqual(run.returncode, expected_exit_code)
+        finally:
+            if os.path.exists(c_file):
+                os.remove(c_file)
+            if os.path.exists(bin_file):
+                os.remove(bin_file)
 
-    def test_minic_struct_maps_to_named_c_struct(self):
-        src = ('struct P { int x; int y; };\n'
-               'int main() { struct P p; p.x = 41; p.y = 1; return p.x + p.y; }\n')
-        c = to_c(src)
-        self.assertIn("} P;", c)
-        self.assertIn("p.x = 41;", c)
+    def test_simple_return(self):
+        code = """
+        int main() {
+            return 42;
+        }
+        """
+        self._compile_and_run(code, 42)
 
+    def test_arithmetic_and_function_call(self):
+        code = """
+        int compute(int a, int b) {
+            return a * b + (a - b);
+        }
+        int main() {
+            return compute(6, 4); // 24 + 2 = 26
+        }
+        """
+        self._compile_and_run(code, 26)
 
-@unittest.skipIf(shutil.which("gcc") is None, "gcc not on PATH")
-class TestCompilesAndRuns(unittest.TestCase):
-    def test_value_semantics_preserved_through_call(self):
-        # If the array param decayed to a pointer, the callee's writes would
-        # leak back and change the result.
-        src = ('int bump(int a[3]) { a[0] = a[0] + 100; return a[0]; }\n'
-               'int main() {\n'
-               '  int v[3]; v[0] = 7; v[1] = 0; v[2] = 0;\n'
-               '  int inside = bump(v);\n'
-               '  return inside - v[0];\n'   # 107 - 7 = 100 iff value semantics hold
-               '}\n')
-        res = compile_and_run(to_c(src), 0)
-        self.assertTrue(res.compiled, res.compile_error)
-        self.assertEqual(res.returncode, 100)
+    def test_1d_array_value_semantics(self):
+        code = """
+        int sumArr(int a[3]) {
+            int total = 0;
+            for (int i = 0; i < 3; i = i + 1) {
+                total = total + a[i];
+            }
+            a[0] = 999; // Should NOT modify caller's array (value semantics!)
+            return total;
+        }
+        int main() {
+            int arr[3];
+            arr[0] = 10;
+            arr[1] = 20;
+            arr[2] = 30;
+            int s = sumArr(arr); // s = 60
+            return s + arr[0];    // 60 + 10 = 70
+        }
+        """
+        self._compile_and_run(code, 70)
+
+    def test_2d_array_value_semantics(self):
+        code = """
+        int sumMatrix(int m[2][2]) {
+            int total = 0;
+            for (int i = 0; i < 2; i = i + 1) {
+                for (int j = 0; j < 2; j = j + 1) {
+                    total = total + m[i][j];
+                }
+            }
+            m[0][0] = 999; // Value semantics check
+            return total;
+        }
+        int main() {
+            int mat[2][2];
+            mat[0][0] = 1; mat[0][1] = 2;
+            mat[1][0] = 3; mat[1][1] = 4;
+            int s = sumMatrix(mat); // 10
+            return s + mat[0][0];   // 10 + 1 = 11
+        }
+        """
+        self._compile_and_run(code, 11)
+
+    def test_struct_copy_semantics(self):
+        code = """
+        struct Point {
+            int x;
+            int y;
+        };
+        int mutatePoint(struct Point p) {
+            p.x = 100;
+            return p.x + p.y;
+        }
+        int main() {
+            struct Point pt;
+            pt.x = 5;
+            pt.y = 15;
+            int res = mutatePoint(pt); // 115
+            return pt.x + res;         // 5 + 115 = 120
+        }
+        """
+        self._compile_and_run(code, 120)
+
+    def test_string_literal_assignment(self):
+        code = """
+        int main() {
+            char str1[6] = "hello";
+            char str2[6];
+            str2 = "world";
+            return 1;
+        }
+        """
+        self._compile_and_run(code, 1)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
-"""MiniC TAC-to-C code generation (Person B)."""
-from .c_emitter import CEmitter, emit_c
+"""MiniC IR-to-C Codegen Package."""
 
-__all__ = ["CEmitter", "emit_c"]
+from .c_emitter import CEmitter
+
+__all__ = ["CEmitter"]

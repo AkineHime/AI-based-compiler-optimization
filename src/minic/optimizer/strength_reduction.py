@@ -1,173 +1,195 @@
-"""Pass 5 -- Strength Reduction on induction variables.
-
-Targets the pattern
-
-    L_header:
-        ...
-        j = i * K          # i is a basic induction variable, K a constant
-        ...
-        i = i + S          # the (single) update of i, S a constant
-        goto L_header
-
-and rewrites it to
-
-    L_preheader:
-        sr = i * K         # i still holds its pre-loop value here
-    L_header:
-        ...
-        j = sr             # was j = i * K
-        ...
-        i = i + S
-        sr = sr + (K*S)    # inserted right after i's update
-        goto L_header
-
-The invariant ``sr == i * K`` is established in the pre-header and preserved by
-keeping ``sr += K*S`` adjacent to ``i += S``, so the value read at the use site
-is identical whether the use precedes or follows the update.  All arithmetic
-uses 32-bit wrap-around, matching the C ``int`` the baseline would compute.
-
-Guards: exactly one basic-induction update ``i = i +/- const`` in the loop, the
-derived temp ``j`` defined exactly once, ``K`` and ``S`` non-zero integer
-constants, and the loop header in the canonical ``LABEL``-first shape.
-"""
-from typing import Dict, List, Optional, Set
-
+import copy
+from typing import Dict, List, Set, Optional, Any, Tuple
 from ..ir.tac import (
-    Opcode, TACInstruction, TACFunction, TACProgram, Constant, Var, Temp, Label,
+    TACFunction, TACInstruction, Opcode,
+    Operand, Temp, Var, Constant, Label
 )
-from ..ir.cfg import build_cfg_for_function
-from ._util import (
-    op_name, defined_name, const_int_value, is_temp_name, wrap32, int_const,
-)
-
-_SR_COUNTER = [0]
+from ..ir.cfg import build_cfg_for_function, CFG, BasicBlock, Loop
 
 
-def run(func: TACFunction, prog: Optional[TACProgram] = None) -> bool:
-    changed_overall = False
-    for _ in range(64):
-        if not _one_reduction(func):
-            break
-        changed_overall = True
-    return changed_overall
+def strength_reduction_pass(func: TACFunction) -> TACFunction:
+    """Performs Strength Reduction on loop induction variables (replacing multiplications with additions)."""
+    optimized_func = copy.deepcopy(func)
+    cfg = build_cfg_for_function(optimized_func)
 
-
-def _one_reduction(func: TACFunction) -> bool:
-    cfg = build_cfg_for_function(func)
     if not cfg.loops:
-        return False
+        return optimized_func
 
-    for loop in sorted(cfg.loops, key=lambda l: -l.depth):
-        header = loop.header
-        if not header.instructions or header.instructions[0].opcode != Opcode.LABEL:
-            continue
-        header_label_inst = header.instructions[0]
+    max_temp_id = _get_max_temp_id(optimized_func)
 
-        loop_insts: List[TACInstruction] = []
-        for b in cfg.blocks:
-            if b in loop.blocks:
-                loop_insts.extend(b.instructions)
-
-        # all definitions in the loop
-        def_sites: Dict[str, List[TACInstruction]] = {}
-        for i in loop_insts:
-            d = defined_name(i)
-            if d:
-                def_sites.setdefault(d, []).append(i)
-            if i.opcode in (Opcode.STORE_ARR_1D, Opcode.STORE_ARR_2D,
-                            Opcode.SET_FIELD):
-                n = op_name(i.dst)
-                if n:
-                    def_sites.setdefault(n, []).append(i)
-
-        # basic induction variables.  Two shapes are recognised:
-        #   direct :  i = i + c
-        #   staged :  tX = i + c ;  i = tX      (what the IR generator emits)
-        bivs: Dict[str, int] = {}
-        biv_update: Dict[str, TACInstruction] = {}
-        for name, sites in def_sites.items():
-            if len(sites) != 1:
-                continue
-            upd = sites[0]
-            step = _basic_iv_step(upd, name)
-            if step is None and upd.opcode == Opcode.ASSIGN:
-                tname = op_name(upd.src1)
-                if is_temp_name(tname) and len(def_sites.get(tname, [])) == 1:
-                    step = _basic_iv_step(def_sites[tname][0], name)
-            if step is not None and step != 0:
-                bivs[name] = step
-                biv_update[name] = upd  # insert  sr += delta  right after this
+    for loop in cfg.loops:
+        # Step 1: Find basic induction variables (e.g. i = i + 1 or t = i + 1; i = t)
+        bivs, update_insts = _find_basic_induction_vars(loop)
         if not bivs:
             continue
 
-        for i in loop_insts:
-            if i.opcode != Opcode.MUL:
-                continue
-            k = biv = None
-            n1, n2 = op_name(i.src1), op_name(i.src2)
-            c1, c2 = const_int_value(i.src1), const_int_value(i.src2)
-            if n1 in bivs and c2 is not None:
-                biv, k = n1, c2
-            elif n2 in bivs and c1 is not None:
-                biv, k = n2, c1
-            if biv is None or k == 0:
-                continue
-            d = defined_name(i)
-            if not d or len(def_sites.get(d, [])) != 1:
-                continue
+        # Step 2: Find derived induction variables (e.g. t = i * k)
+        divs = _find_derived_induction_vars(loop, bivs)
+        if not divs:
+            continue
 
-            step = bivs[biv]
-            delta = wrap32(k * step)
-            sr = f"__sr{_next_sr()}"
-            func.local_types[sr] = "int"
+        # Step 3: Apply transformation
+        header_inst = loop.header.instructions[0] if loop.header.instructions else None
+        if header_inst is None:
+            continue
 
-            upd_inst = biv_update[biv]
-            insts = func.instructions
-            try:
-                mul_idx = next(x for x, ins in enumerate(insts) if ins is i)
-                upd_idx = next(x for x, ins in enumerate(insts) if ins is upd_inst)
-                hdr_idx = next(x for x, ins in enumerate(insts)
-                               if ins is header_label_inst)
-            except StopIteration:
-                continue
+        for div_inst, biv_name, step_const, mult_const, is_addition in divs:
+            max_temp_id += 1
+            sr_temp = Temp(id=max_temp_id, type_str="int")
+            optimized_func.local_types[str(sr_temp)] = "int"
 
-            sr_var = Var(name=sr, type_str="int")
-            # 1. use site:  j = i * K   ->   j = sr
-            insts[mul_idx] = TACInstruction(Opcode.ASSIGN, dst=i.dst, src1=sr_var)
-            # 2. after the induction update:  sr = sr + delta
-            insts.insert(upd_idx + 1,
-                         TACInstruction(Opcode.ADD, dst=sr_var, src1=sr_var,
-                                        src2=int_const(delta)))
-            # 3. pre-header seed:  L_pre: ; sr = biv * K
-            pre_label = Label(name=f"L_sr_pre_{func.name}_{_SR_COUNTER[0]}")
-            seed = [
-                TACInstruction(Opcode.LABEL, dst=pre_label),
-                TACInstruction(Opcode.MUL, dst=sr_var,
-                               src1=Var(name=biv, type_str="int"),
-                               src2=int_const(k)),
-            ]
-            # header index may have shifted if the insert was before it
-            hdr_idx = next(x for x, ins in enumerate(insts)
-                           if ins is header_label_inst)
-            func.instructions = insts[:hdr_idx] + seed + insts[hdr_idx:]
-            return True
+            # Find reaching initial value of biv before loop
+            init_val = _find_biv_init_val(optimized_func, biv_name, header_inst)
+            step_val = step_const * mult_const
 
-    return False
+            # Preheader initialization instructions: sr_temp = init_val * mult_const
+            preheader_init: List[TACInstruction] = []
+            if isinstance(init_val, Constant):
+                preheader_init.append(
+                    TACInstruction(
+                        Opcode.ASSIGN,
+                        dst=sr_temp,
+                        src1=Constant(init_val.value * mult_const, "int"),
+                        annotation="SR Init"
+                    )
+                )
+            else:
+                preheader_init.append(
+                    TACInstruction(
+                        Opcode.MUL,
+                        dst=sr_temp,
+                        src1=init_val,
+                        src2=Constant(mult_const, "int"),
+                        annotation="SR Init"
+                    )
+                )
+
+            # Step update instruction: sr_temp = sr_temp +/- step_val
+            step_opcode = Opcode.ADD if is_addition else Opcode.SUB
+            step_update_inst = TACInstruction(
+                step_opcode,
+                dst=sr_temp,
+                src1=sr_temp,
+                src2=Constant(step_val, "int"),
+                annotation="SR Step"
+            )
+
+            # Rebuild instruction stream
+            new_instructions: List[TACInstruction] = []
+            preheader_emitted = False
+            biv_update_targets = update_insts.get(biv_name, [])
+
+            for inst in optimized_func.instructions:
+                if inst == header_inst and not preheader_emitted:
+                    new_instructions.extend(preheader_init)
+                    preheader_emitted = True
+
+                if inst == div_inst:
+                    # Replace multiplication with copy from sr_temp
+                    new_instructions.append(
+                        TACInstruction(
+                            Opcode.ASSIGN,
+                            dst=inst.dst,
+                            src1=sr_temp,
+                            annotation="SR Reduced"
+                        )
+                    )
+                else:
+                    new_instructions.append(inst)
+                    # Check if this is the BIV update instruction
+                    if any(inst == upd for upd in biv_update_targets):
+                        new_instructions.append(step_update_inst)
+
+            optimized_func.instructions = new_instructions
+
+    return optimized_func
 
 
-def _basic_iv_step(inst: TACInstruction, name: str) -> Optional[int]:
-    if inst.opcode == Opcode.ADD:
-        if op_name(inst.src1) == name:
-            return const_int_value(inst.src2)
-        if op_name(inst.src2) == name:
-            return const_int_value(inst.src1)
-    elif inst.opcode == Opcode.SUB:
-        if op_name(inst.src1) == name:
-            c = const_int_value(inst.src2)
-            return -c if c is not None else None
-    return None
+def _get_max_temp_id(func: TACFunction) -> int:
+    max_id = 0
+    for inst in func.instructions:
+        for op in (inst.dst, inst.src1, inst.src2, inst.src3):
+            if isinstance(op, Temp):
+                if op.id > max_id:
+                    max_id = op.id
+    return max_id
 
 
-def _next_sr() -> int:
-    _SR_COUNTER[0] += 1
-    return _SR_COUNTER[0]
+def _find_basic_induction_vars(loop: Loop) -> Tuple[Dict[str, Tuple[int, bool]], Dict[str, List[TACInstruction]]]:
+    """Returns (biv_map, update_instructions_map)."""
+    bivs: Dict[str, Tuple[int, bool]] = {}
+    updates: Dict[str, List[TACInstruction]] = {}
+
+    all_insts: List[TACInstruction] = []
+    for b in loop.blocks:
+        all_insts.extend(b.instructions)
+
+    temp_to_step: Dict[str, Tuple[str, int, bool]] = {}
+
+    for i, inst in enumerate(all_insts):
+        # Direct: i = i + c or i = i - c
+        if inst.opcode in (Opcode.ADD, Opcode.SUB):
+            if isinstance(inst.dst, Var) and isinstance(inst.src1, Var) and inst.dst.name == inst.src1.name:
+                if isinstance(inst.src2, Constant) and isinstance(inst.src2.value, int):
+                    bivs[inst.dst.name] = (inst.src2.value, inst.opcode == Opcode.ADD)
+                    updates.setdefault(inst.dst.name, []).append(inst)
+            elif inst.opcode == Opcode.ADD and isinstance(inst.dst, Var) and isinstance(inst.src2, Var) and inst.dst.name == inst.src2.name:
+                if isinstance(inst.src1, Constant) and isinstance(inst.src1.value, int):
+                    bivs[inst.dst.name] = (inst.src1.value, True)
+                    updates.setdefault(inst.dst.name, []).append(inst)
+
+            # Temp step: t = i + c
+            elif isinstance(inst.dst, Temp):
+                if isinstance(inst.src1, Var) and isinstance(inst.src2, Constant) and isinstance(inst.src2.value, int):
+                    temp_to_step[str(inst.dst)] = (inst.src1.name, inst.src2.value, inst.opcode == Opcode.ADD)
+                elif inst.opcode == Opcode.ADD and isinstance(inst.src2, Var) and isinstance(inst.src1, Constant) and isinstance(inst.src1.value, int):
+                    temp_to_step[str(inst.dst)] = (inst.src2.name, inst.src1.value, True)
+
+        # Assignment from temp step: i = t
+        elif inst.opcode == Opcode.ASSIGN:
+            if isinstance(inst.dst, Var) and isinstance(inst.src1, Temp):
+                t_name = str(inst.src1)
+                if t_name in temp_to_step:
+                    v_name, step_c, is_add = temp_to_step[t_name]
+                    if v_name == inst.dst.name:
+                        bivs[v_name] = (step_c, is_add)
+                        updates.setdefault(v_name, []).append(inst)
+
+    return bivs, updates
+
+
+def _find_derived_induction_vars(
+    loop: Loop, bivs: Dict[str, Tuple[int, bool]]
+) -> List[Tuple[TACInstruction, str, int, int, bool]]:
+    """Finds instructions computing t = biv * k."""
+    divs: List[Tuple[TACInstruction, str, int, int, bool]] = []
+
+    for b in loop.blocks:
+        for inst in b.instructions:
+            if inst.opcode == Opcode.MUL:
+                if isinstance(inst.src1, Var) and inst.src1.name in bivs and isinstance(inst.src2, Constant) and isinstance(inst.src2.value, int):
+                    biv_name = inst.src1.name
+                    step_c, is_add = bivs[biv_name]
+                    mult_c = inst.src2.value
+                    if mult_c > 0:
+                        divs.append((inst, biv_name, step_c, mult_c, is_add))
+                elif isinstance(inst.src2, Var) and inst.src2.name in bivs and isinstance(inst.src1, Constant) and isinstance(inst.src1.value, int):
+                    biv_name = inst.src2.name
+                    step_c, is_add = bivs[biv_name]
+                    mult_c = inst.src1.value
+                    if mult_c > 0:
+                        divs.append((inst, biv_name, step_c, mult_c, is_add))
+
+    return divs
+
+
+def _find_biv_init_val(func: TACFunction, biv_name: str, header_inst: TACInstruction) -> Operand:
+    """Scan backward before loop header to find initial value assigned to BIV."""
+    for inst in reversed(func.instructions):
+        if inst == header_inst:
+            continue
+        if inst.opcode == Opcode.ASSIGN and isinstance(inst.dst, Var) and inst.dst.name == biv_name:
+            if isinstance(inst.src1, Operand):
+                return inst.src1
+            return Constant(0, "int")
+    return Constant(0, "int")

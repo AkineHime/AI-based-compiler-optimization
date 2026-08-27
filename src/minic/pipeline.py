@@ -15,8 +15,8 @@ from .frontend.parser import Parser
 from .frontend.sema import SemanticAnalyzer
 from .ir.ir_generator import IRGenerator
 from .ir.tac import TACProgram
-from .optimizer import optimize
-from .codegen import emit_c
+from .optimizer import optimize_program
+from .codegen import CEmitter
 
 
 def source_to_tac(source: str) -> TACProgram:
@@ -28,8 +28,8 @@ def source_to_tac(source: str) -> TACProgram:
 
 def source_to_c(source: str, combo_id: int = 0) -> str:
     tac = source_to_tac(source)
-    tac = optimize(tac, combo_id)
-    return emit_c(tac)
+    tac = optimize_program(tac, combo_id)
+    return CEmitter().emit(tac)
 
 
 @dataclass

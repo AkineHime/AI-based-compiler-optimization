@@ -1,135 +1,239 @@
-"""Pass 1 -- Constant Folding & Constant Propagation.
-
-Strategy
---------
-A single forward walk over the instruction list of each function, carrying a
-``known`` map ``name -> Constant`` that is only ever populated with facts that
-hold along *every* path to the current instruction.  The map is cleared at any
-point where that guarantee could break:
-
-* at a ``LABEL`` (a basic-block boundary / potential control-flow join), and
-* right after an unconditional ``JUMP`` / ``RETURN`` (start of a region that is
-  only reachable via a label anyway).
-
-Straight-line fall-through -- including the not-taken edge of a conditional
-branch -- keeps the map, which is exactly where propagation is sound.
-
-With the map in hand the pass:
-
-* substitutes known constants into rvalue operand positions,
-* folds ``t = c1 OP c2`` / ``t = OP c1`` to ``t = c`` (32-bit C int semantics),
-* rewrites branches with a constant condition
-  (``ifFalse 0 goto L`` -> ``goto L``; ``ifFalse 1 goto L`` -> removed;
-  ``if 1 goto L`` -> ``goto L``; ``if 0 goto L`` -> removed).
-
-The walk is repeated until it reaches a fixed point.
-"""
-from typing import Dict, List, Optional
-
+import copy
+from typing import Dict, List, Optional, Any, Tuple
 from ..ir.tac import (
-    Opcode, TACInstruction, TACFunction, TACProgram, Constant, Var, Temp,
+    TACProgram, TACFunction, TACInstruction, Opcode,
+    Operand, Temp, Var, Constant, Label
 )
-from ._util import (
-    BINARY_OPS, UNARY_OPS, VALUE_PRODUCING,
-    value_operand_slots, op_name, const_int_value, global_names,
-    fold_binary, fold_unary, int_const,
-)
+from ..ir.cfg import build_cfg_for_function, CFG
 
 
-def run(func: TACFunction, prog: Optional[TACProgram] = None) -> bool:
-    globals_ = global_names(prog)
-    changed_overall = False
+def constant_folding_pass(func: TACFunction) -> TACFunction:
+    """Performs constant folding, constant propagation, and branch simplification on a function."""
+    changed = True
+    max_iterations = 20
+    iteration = 0
 
-    while True:
-        known: Dict[str, Constant] = {}
-        out: List[TACInstruction] = []
+    optimized_func = copy.deepcopy(func)
+
+    while changed and iteration < max_iterations:
         changed = False
+        iteration += 1
 
-        for inst in func.instructions:
+        # Step 1: Forward constant propagation and expression evaluation
+        new_instructions: List[TACInstruction] = []
+        
+        # Temp constants map (SSA-like temporaries)
+        temp_constants: Dict[str, Constant] = {}
+        # Block-local variable constants
+        var_constants: Dict[str, Constant] = {}
+
+        for inst in optimized_func.instructions:
             op = inst.opcode
 
-            if op == Opcode.LABEL:
-                known = {}
-                out.append(inst)
-                continue
+            # Reset local var constants on control flow targets/jumps
+            if op in (Opcode.LABEL, Opcode.JUMP, Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE, Opcode.CALL):
+                var_constants.clear()
 
-            # 1. substitute known constants into rvalue slots
-            for slot in value_operand_slots(inst):
-                cur = getattr(inst, slot)
-                name = op_name(cur)
-                if name is not None and name in known:
-                    setattr(inst, slot, known[name])
-                    changed = True
+            # Substitute operands from known constants
+            src1 = _substitute_constant(inst.src1, temp_constants, var_constants)
+            src2 = _substitute_constant(inst.src2, temp_constants, var_constants)
+            src3 = _substitute_constant(inst.src3, temp_constants, var_constants)
 
-            # 2. fold pure arithmetic / relational / logical / unary ops
-            if op in BINARY_OPS:
-                a = const_int_value(inst.src1)
-                b = const_int_value(inst.src2)
-                if a is not None and b is not None:
-                    folded = fold_binary(op, a, b)
-                    if folded is not None:
-                        inst = TACInstruction(Opcode.ASSIGN, dst=inst.dst,
-                                              src1=int_const(folded))
-                        op = Opcode.ASSIGN
+            if src1 != inst.src1 or src2 != inst.src2 or src3 != inst.src3:
+                changed = True
+
+            # Evaluate binary operations
+            if op in (
+                Opcode.ADD, Opcode.SUB, Opcode.MUL, Opcode.DIV, Opcode.MOD,
+                Opcode.EQ, Opcode.NE, Opcode.LT, Opcode.LE, Opcode.GT, Opcode.GE,
+                Opcode.LOGIC_AND, Opcode.LOGIC_OR
+            ):
+                if isinstance(src1, Constant) and isinstance(src2, Constant):
+                    folded_val, val_type = _evaluate_binary_op(op, src1.value, src2.value, src1.type_str, src2.type_str)
+                    if folded_val is not None:
+                        c_res = Constant(value=folded_val, type_str=val_type)
+                        new_inst = TACInstruction(Opcode.ASSIGN, dst=inst.dst, src1=c_res)
+                        new_instructions.append(new_inst)
+                        if isinstance(inst.dst, Temp):
+                            temp_constants[str(inst.dst)] = c_res
+                        elif isinstance(inst.dst, Var):
+                            var_constants[inst.dst.name] = c_res
                         changed = True
-            elif op in UNARY_OPS:
-                a = const_int_value(inst.src1)
-                if a is not None:
-                    folded = fold_unary(op, a)
-                    if folded is not None:
-                        inst = TACInstruction(Opcode.ASSIGN, dst=inst.dst,
-                                              src1=int_const(folded))
-                        op = Opcode.ASSIGN
-                        changed = True
+                        continue
 
-            # 3. simplify constant-condition branches
-            if op in (Opcode.JUMP_IF_FALSE, Opcode.JUMP_IF_TRUE):
-                c = const_int_value(inst.src1)
-                if c is not None:
-                    take = (c == 0) if op == Opcode.JUMP_IF_FALSE else (c != 0)
+                # Algebraic simplifications
+                simplified = _simplify_algebraic(op, inst.dst, src1, src2)
+                if simplified is not None:
+                    new_instructions.append(simplified)
+                    if simplified.opcode == Opcode.ASSIGN and isinstance(simplified.src1, Constant):
+                        if isinstance(simplified.dst, Temp):
+                            temp_constants[str(simplified.dst)] = simplified.src1
+                        elif isinstance(simplified.dst, Var):
+                            var_constants[simplified.dst.name] = simplified.src1
                     changed = True
-                    if take:
-                        out.append(TACInstruction(Opcode.JUMP, dst=inst.dst))
-                        known = {}
-                    # else: branch never taken -> drop instruction entirely
                     continue
 
-            # 4. update the known-constant map
-            _update_known(known, inst, op, globals_)
+            # Evaluate unary operations
+            elif op in (Opcode.NEG, Opcode.LOGIC_NOT):
+                if isinstance(src1, Constant):
+                    folded_val, val_type = _evaluate_unary_op(op, src1.value, src1.type_str)
+                    if folded_val is not None:
+                        c_res = Constant(value=folded_val, type_str=val_type)
+                        new_inst = TACInstruction(Opcode.ASSIGN, dst=inst.dst, src1=c_res)
+                        new_instructions.append(new_inst)
+                        if isinstance(inst.dst, Temp):
+                            temp_constants[str(inst.dst)] = c_res
+                        elif isinstance(inst.dst, Var):
+                            var_constants[inst.dst.name] = c_res
+                        changed = True
+                        continue
 
-            out.append(inst)
+            # Simplify conditional branches on constant conditions
+            elif op == Opcode.JUMP_IF_TRUE:
+                if isinstance(src1, Constant):
+                    if src1.value != 0:
+                        # Always true -> unconditional jump
+                        new_instructions.append(TACInstruction(Opcode.JUMP, dst=inst.dst))
+                    # If false -> branch never taken, eliminate
+                    changed = True
+                    continue
 
-            if op in (Opcode.JUMP, Opcode.RETURN):
-                known = {}
+            elif op == Opcode.JUMP_IF_FALSE:
+                if isinstance(src1, Constant):
+                    if src1.value == 0:
+                        # Always false -> unconditional jump
+                        new_instructions.append(TACInstruction(Opcode.JUMP, dst=inst.dst))
+                    # If true -> branch never taken, eliminate
+                    changed = True
+                    continue
 
-        func.instructions = out
-        changed_overall |= changed
-        if not changed:
-            break
+            # Tracking assignments
+            elif op == Opcode.ASSIGN:
+                if isinstance(inst.dst, Temp):
+                    if isinstance(src1, Constant):
+                        temp_constants[str(inst.dst)] = src1
+                elif isinstance(inst.dst, Var):
+                    if isinstance(src1, Constant):
+                        var_constants[inst.dst.name] = src1
+                    else:
+                        var_constants.pop(inst.dst.name, None)
 
-    return changed_overall
+            # Invalidate variable constant if it is mutated in aggregate store or field write
+            elif op in (Opcode.STORE_ARR_1D, Opcode.STORE_ARR_2D, Opcode.SET_FIELD):
+                if isinstance(inst.dst, Var):
+                    var_constants.pop(inst.dst.name, None)
+
+            new_instructions.append(
+                TACInstruction(
+                    opcode=op, dst=inst.dst, src1=src1, src2=src2, src3=src3, annotation=inst.annotation
+                )
+            )
+
+        optimized_func.instructions = new_instructions
+
+    return optimized_func
 
 
-def _update_known(known: Dict[str, Constant], inst: TACInstruction,
-                  op: Opcode, globals_) -> None:
-    if op == Opcode.ASSIGN and isinstance(inst.src1, Constant) \
-            and isinstance(inst.dst, (Var, Temp)):
-        known[str(inst.dst)] = inst.src1
-        return
+def _substitute_constant(operand: Any, temp_constants: Dict[str, Constant], var_constants: Dict[str, Constant]) -> Any:
+    if isinstance(operand, Temp):
+        key = str(operand)
+        if key in temp_constants:
+            return temp_constants[key]
+    elif isinstance(operand, Var):
+        if operand.name in var_constants:
+            return var_constants[operand.name]
+    return operand
 
-    # any other (re)definition invalidates the destination's constant status
-    if op in VALUE_PRODUCING or op == Opcode.CALL:
-        name = op_name(inst.dst)
-        if name is not None:
-            known.pop(name, None)
 
-    if op in (Opcode.STORE_ARR_1D, Opcode.STORE_ARR_2D, Opcode.SET_FIELD):
-        name = op_name(inst.dst)
-        if name is not None:
-            known.pop(name, None)
+def _evaluate_binary_op(op: Opcode, v1: Any, v2: Any, t1: str, t2: str) -> Tuple[Optional[Any], str]:
+    res_type = "float" if (t1 == "float" or t2 == "float") else "int"
+    try:
+        if op == Opcode.ADD:
+            val = v1 + v2
+        elif op == Opcode.SUB:
+            val = v1 - v2
+        elif op == Opcode.MUL:
+            val = v1 * v2
+        elif op == Opcode.DIV:
+            if v2 == 0:
+                return None, res_type
+            if res_type == "int":
+                val = int(v1 / v2)
+            else:
+                val = v1 / v2
+        elif op == Opcode.MOD:
+            if v2 == 0:
+                return None, res_type
+            val = int(v1 % v2) if res_type == "int" else None
+        elif op == Opcode.EQ:
+            val = 1 if v1 == v2 else 0
+            res_type = "int"
+        elif op == Opcode.NE:
+            val = 1 if v1 != v2 else 0
+            res_type = "int"
+        elif op == Opcode.LT:
+            val = 1 if v1 < v2 else 0
+            res_type = "int"
+        elif op == Opcode.LE:
+            val = 1 if v1 <= v2 else 0
+            res_type = "int"
+        elif op == Opcode.GT:
+            val = 1 if v1 > v2 else 0
+            res_type = "int"
+        elif op == Opcode.GE:
+            val = 1 if v1 >= v2 else 0
+            res_type = "int"
+        elif op == Opcode.LOGIC_AND:
+            val = 1 if (v1 != 0 and v2 != 0) else 0
+            res_type = "int"
+        elif op == Opcode.LOGIC_OR:
+            val = 1 if (v1 != 0 or v2 != 0) else 0
+            res_type = "int"
+        else:
+            return None, res_type
 
-    # a call may mutate any global
-    if op == Opcode.CALL:
-        for g in list(known):
-            if g in globals_:
-                known.pop(g, None)
+        return val, res_type
+    except Exception:
+        return None, res_type
+
+
+def _evaluate_unary_op(op: Opcode, v: Any, t: str) -> Tuple[Optional[Any], str]:
+    if op == Opcode.NEG:
+        return -v, t
+    elif op == Opcode.LOGIC_NOT:
+        return (1 if v == 0 else 0), "int"
+    return None, t
+
+
+def _simplify_algebraic(op: Opcode, dst: Optional[Operand], src1: Any, src2: Any) -> Optional[TACInstruction]:
+    # x + 0 -> x
+    if op == Opcode.ADD:
+        if isinstance(src2, Constant) and src2.value == 0:
+            return TACInstruction(Opcode.ASSIGN, dst=dst, src1=src1)
+        if isinstance(src1, Constant) and src1.value == 0:
+            return TACInstruction(Opcode.ASSIGN, dst=dst, src1=src2)
+
+    # x - 0 -> x
+    elif op == Opcode.SUB:
+        if isinstance(src2, Constant) and src2.value == 0:
+            return TACInstruction(Opcode.ASSIGN, dst=dst, src1=src1)
+
+    # x * 1 -> x, x * 0 -> 0
+    elif op == Opcode.MUL:
+        if isinstance(src2, Constant):
+            if src2.value == 1:
+                return TACInstruction(Opcode.ASSIGN, dst=dst, src1=src1)
+            elif src2.value == 0:
+                return TACInstruction(Opcode.ASSIGN, dst=dst, src1=Constant(0, "int"))
+        if isinstance(src1, Constant):
+            if src1.value == 1:
+                return TACInstruction(Opcode.ASSIGN, dst=dst, src1=src2)
+            elif src1.value == 0:
+                return TACInstruction(Opcode.ASSIGN, dst=dst, src1=Constant(0, "int"))
+
+    # x / 1 -> x
+    elif op == Opcode.DIV:
+        if isinstance(src2, Constant) and src2.value == 1:
+            return TACInstruction(Opcode.ASSIGN, dst=dst, src1=src1)
+
+    return None

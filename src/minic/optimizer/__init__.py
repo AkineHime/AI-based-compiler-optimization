@@ -1,15 +1,20 @@
-"""MiniC optimization pass library (Person B).
+"""MiniC 5-Bit Optimization Engine Package."""
 
-Five independently toggleable passes over the existing TAC IR, orchestrated by a
-5-flag :class:`PassManager` that can run any of the 64 combinations in one fixed
-canonical order.
-"""
-from .pass_manager import (
-    PassManager, optimize, combo_flags, combo_label,
-    FLAG_CF, FLAG_DCE, FLAG_CSE, FLAG_LICM, FLAG_SR, NUM_COMBOS,
-)
+from .constant_folding import constant_folding_pass
+from .dce import dce_pass
+from .cse import cse_pass
+from .licm import licm_pass
+from .strength_reduction import strength_reduction_pass
+from .pass_manager import PassManager, optimize_program, get_pass_names, PASS_FLAGS
 
 __all__ = [
-    "PassManager", "optimize", "combo_flags", "combo_label",
-    "FLAG_CF", "FLAG_DCE", "FLAG_CSE", "FLAG_LICM", "FLAG_SR", "NUM_COMBOS",
+    "constant_folding_pass",
+    "dce_pass",
+    "cse_pass",
+    "licm_pass",
+    "strength_reduction_pass",
+    "PassManager",
+    "optimize_program",
+    "get_pass_names",
+    "PASS_FLAGS",
 ]

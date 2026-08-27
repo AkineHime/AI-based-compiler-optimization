@@ -50,6 +50,43 @@ class CFG:
             return 0
         return max(loop.depth for loop in self.loops)
 
+    def to_mermaid(self, func_name: str = "func") -> str:
+        """Generate a Mermaid flowchart diagram representing this CFG."""
+        lines = [f"flowchart TD", f"    subgraph {func_name}[\"Function: {func_name}\"]"]
+        for b in self.blocks:
+            escaped_insts = []
+            for inst in b.instructions[:6]:
+                txt = str(inst).strip().replace('"', "'")
+                escaped_insts.append(txt)
+            if len(b.instructions) > 6:
+                escaped_insts.append(f"... ({len(b.instructions) - 6} more insts)")
+            inst_body = "<br/>".join(escaped_insts)
+            header_lbl = f"BB{b.id}" + (f" ({b.label})" if b.label else "")
+            lines.append(f'        BB{b.id}["<b>{header_lbl}</b><br/>{inst_body}"]')
+
+        for b in self.blocks:
+            for s in b.successors:
+                # Check if it is a back-edge (loop)
+                is_back_edge = any(l.back_edge == (b, s) for l in self.loops)
+                arrow = "-. Loop Back-Edge .->" if is_back_edge else "-->"
+                lines.append(f"        BB{b.id} {arrow} BB{s.id}")
+
+        lines.append("    end")
+        return "\n".join(lines)
+
+    def to_ascii_tree(self) -> str:
+        """Generate a text representation of the CFG blocks and edges."""
+        lines = []
+        for b in self.blocks:
+            succ_str = ", ".join(f"BB{s.id}" for s in b.successors) if b.successors else "Exit"
+            pred_str = ", ".join(f"BB{p.id}" for p in b.predecessors) if b.predecessors else "Entry"
+            lbl = f" [{b.label}]" if b.label else ""
+            lines.append(f"┌─ BasicBlock {b.id}{lbl} (Preds: {pred_str}) -> (Succs: {succ_str})")
+            for inst in b.instructions:
+                lines.append(f"│  {str(inst).strip()}")
+            lines.append("└────────────────────────────────────────")
+        return "\n".join(lines)
+
 
 def build_cfg_for_function(func: TACFunction) -> CFG:
     """Construct Control Flow Graph, Dominator sets, and Natural Loops for a TACFunction."""
@@ -58,10 +95,6 @@ def build_cfg_for_function(func: TACFunction) -> CFG:
         return CFG()
 
     # Step 1: Identify leaders
-    # Leaders are:
-    # 1. First instruction
-    # 2. Target of any jump/branch (a LABEL)
-    # 3. Instruction immediately following any jump/branch/return
     is_leader = [False] * len(insts)
     is_leader[0] = True
 
@@ -162,7 +195,6 @@ def build_cfg_for_function(func: TACFunction) -> CFG:
 
 
 def _compute_dominators(cfg: CFG) -> None:
-    """Compute dominator sets for all blocks in CFG."""
     if not cfg.blocks:
         return
 
@@ -206,7 +238,6 @@ def _compute_dominators(cfg: CFG) -> None:
         strict_doms = dom[b.id] - {b.id}
         curr_idom = None
         for d in strict_doms:
-            # d is idom if it does not strictly dominate any other strict dominator
             is_immediate = True
             for other in strict_doms:
                 if other != d and other in dom[d]:
@@ -221,18 +252,14 @@ def _compute_dominators(cfg: CFG) -> None:
 
 
 def _detect_loops(cfg: CFG) -> None:
-    """Find back-edges and construct natural loops."""
     loops: List[Loop] = []
 
     for b in cfg.blocks:
         for succ in b.successors:
-            # Back-edge check: succ dominates b
             if succ.id in cfg.dominators.get(b.id, set()):
-                # succ is the loop header, b is the latch
                 loop_blocks = _find_natural_loop_blocks(cfg, succ, b)
                 loops.append(Loop(header=succ, back_edge=(b, succ), blocks=loop_blocks))
 
-    # Calculate loop nesting depths
     for i, loop1 in enumerate(loops):
         depth = 1
         for j, loop2 in enumerate(loops):
@@ -244,7 +271,6 @@ def _detect_loops(cfg: CFG) -> None:
 
 
 def _find_natural_loop_blocks(cfg: CFG, header: BasicBlock, latch: BasicBlock) -> Set[BasicBlock]:
-    """Given header and latch of a back-edge, collect all blocks in the natural loop."""
     loop_blocks: Set[BasicBlock] = {header}
     stack: List[BasicBlock] = []
 
