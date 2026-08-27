@@ -7,10 +7,10 @@ import csv
 from dataclasses import dataclass
 from typing import List, Tuple
 
-from ..features.extractor import FEATURE_NAMES
+from ..features import ALL_FEATURE_NAMES
 from ..optimizer.pass_manager import PASS_ABBR
 
-FEATURE_COLUMNS = [f"f_{n}" for n in FEATURE_NAMES]
+FEATURE_COLUMNS = [f"f_{n}" for n in ALL_FEATURE_NAMES]
 FLAG_COLUMNS = [f"flag_{ab.lower()}" for _bit, ab in sorted(PASS_ABBR.items())]
 FLAG_BITS = sorted(PASS_ABBR)   # [1, 2, 4, 8, 16, 32]
 X_COLUMNS = FEATURE_COLUMNS + FLAG_COLUMNS
@@ -52,6 +52,6 @@ def load_dataset(csv_path: str, drop_missing: bool = True) -> Dataset:
 
 def features_to_x(feature_dict: dict, combo_id: int) -> List[float]:
     """Build one design-matrix row for online prediction."""
-    feats = [float(feature_dict[n]) for n in FEATURE_NAMES]
+    feats = [float(feature_dict[n]) for n in ALL_FEATURE_NAMES]
     flags = [1.0 if combo_id & bit else 0.0 for bit in FLAG_BITS]
     return feats + flags

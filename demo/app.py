@@ -21,7 +21,7 @@ from src.minic.frontend.sema import SemanticAnalyzer
 from src.minic.frontend.error_handler import MiniCError
 from src.minic.ir.ir_generator import IRGenerator
 from src.minic.ir.ir_printer import IRPrinter
-from src.minic.features.extractor import FeatureExtractor
+from src.minic.features import all_features
 from src.minic.optimizer import optimize_program
 from src.minic.optimizer.pass_manager import (
     PassManager, get_pass_names, get_pass_abbrs, PASS_FLAGS, NUM_COMBOS,
@@ -204,7 +204,7 @@ def compile_endpoint():
         return jsonify({"ok": False, "stage": "frontend",
                         "error": f"{type(e).__name__}: {e}\n{traceback.format_exc()}"})
 
-    feats = FeatureExtractor().extract(ast, tac)
+    feats = all_features(ast, tac)
 
     # recommend
     if _MODEL is not None:

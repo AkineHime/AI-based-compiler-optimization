@@ -104,27 +104,68 @@ def licm_pass(func: TACFunction, global_names: frozenset = frozenset()) -> TACFu
         if not header_block.instructions:
             continue
         first_header_inst = header_block.instructions[0]
+        if first_header_inst.opcode != Opcode.LABEL:
+            continue
+        head_label = str(first_header_inst.dst)
 
-        # Build new instructions list
-        new_instructions: List[TACInstruction] = []
+        insts = optimized_func.instructions
+        try:
+            hidx = next(k for k, x in enumerate(insts) if x is first_header_inst)
+        except StopIteration:
+            continue
+
+        # If the code textually before the header is not a fall-through (e.g. an
+        # unroll block's `goto`), instructions placed there are unreachable and,
+        # worse, every jump into the header would skip them.  In that case build
+        # a real labelled pre-header and redirect the loop's *entry* edges
+        # (everything except the latch's back-edge) to it.
+        prev_op = insts[hidx - 1].opcode if hidx > 0 else Opcode.LABEL
+        need_label = prev_op in (Opcode.JUMP, Opcode.RETURN,
+                                 Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE)
+
         hoisted_ids = {id(inst) for inst in invariant_insts}
-        hoisted_emitted = False
+        hoist = [copy.deepcopy(h) for h in invariant_insts]
+        for h in hoist:
+            h.annotation = "LICM Hoisted"
 
-        for inst in optimized_func.instructions:
-            if inst is first_header_inst and not hoisted_emitted:
-                # Insert hoisted instructions right before loop header
-                for h_inst in invariant_insts:
-                    h_copy = copy.deepcopy(h_inst)
-                    h_copy.annotation = "LICM Hoisted"
-                    new_instructions.append(h_copy)
-                hoisted_emitted = True
+        latch_block = loop.back_edge[0] if getattr(loop, "back_edge", None) else None
+        latch_ids = {id(i) for i in latch_block.instructions} if latch_block else set()
 
-            if id(inst) not in hoisted_ids:
+        if need_label:
+            pre_label = Label(name=f"L_licm_pre_{optimized_func.name}_{_pre_counter()}")
+            block = [TACInstruction(Opcode.LABEL, dst=pre_label)] + hoist
+            new_instructions = []
+            for inst in insts:
+                if inst is first_header_inst:
+                    new_instructions.extend(block)
+                if id(inst) in hoisted_ids:
+                    continue
+                # redirect entry jumps (not the latch) from header -> pre-header
+                if (inst.opcode in (Opcode.JUMP, Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE)
+                        and str(inst.dst) == head_label and id(inst) not in latch_ids):
+                    inst = TACInstruction(inst.opcode, dst=pre_label,
+                                          src1=inst.src1, src2=inst.src2,
+                                          src3=inst.src3, annotation=inst.annotation)
                 new_instructions.append(inst)
-
-        optimized_func.instructions = new_instructions
+            optimized_func.instructions = new_instructions
+        else:
+            new_instructions = []
+            for inst in insts:
+                if inst is first_header_inst:
+                    new_instructions.extend(hoist)
+                if id(inst) not in hoisted_ids:
+                    new_instructions.append(inst)
+            optimized_func.instructions = new_instructions
 
     return optimized_func
+
+
+_PRE = [0]
+
+
+def _pre_counter() -> int:
+    _PRE[0] += 1
+    return _PRE[0]
 
 
 def _get_instruction_defs(inst: TACInstruction) -> Set[str]:

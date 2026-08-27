@@ -22,7 +22,7 @@ def plot_speedups(csv_path: str, out_png: str = "docs/speedups.png") -> str:
     y = range(len(names))
     ax.barh([i + 0.2 for i in y], best, height=0.38, label="best combo",
             color="#2563eb")
-    ax.barh([i - 0.2 for i in y], allon, height=0.38, label="all 5 passes",
+    ax.barh([i - 0.2 for i in y], allon, height=0.38, label="all passes",
             color="#93c5fd")
     ax.axvline(1.0, color="#111", lw=1, ls="--")
     ax.set_yticks(list(y))

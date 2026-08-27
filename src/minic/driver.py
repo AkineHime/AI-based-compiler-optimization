@@ -135,7 +135,7 @@ def main():
     parser.add_argument("--tac", action="store_true", help="Print Three-Address Code")
     parser.add_argument("--cfg", action="store_true", help="Print visual Control Flow Graph (CFG) and Mermaid diagrams")
     parser.add_argument("--features", action="store_true", help="Print Extracted 19 Static Features (JSON)")
-    parser.add_argument("--optimize", type=int, default=0, help="5-bit combo mask for optimization passes (0 to 63)")
+    parser.add_argument("--optimize", type=int, default=0, help="6-bit combo mask (0..63): CF DCE CSE LICM SR LU")
     parser.add_argument("--emit-c", action="store_true", help="Emit value-semantics C code")
     parser.add_argument("--run", action="store_true", help="Compile emitted C with gcc -O0 and run")
 

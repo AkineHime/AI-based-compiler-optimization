@@ -1,18 +1,20 @@
-"""Thin wrapper around the speedup-regression model + its persistence."""
+"""Model wrappers for speedup regression + a small bake-off harness."""
 import pickle
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Callable, Dict, List
 
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import (
+    RandomForestRegressor, HistGradientBoostingRegressor, ExtraTreesRegressor,
+)
 
 
 @dataclass
 class SpeedupModel:
-    regressor: RandomForestRegressor
+    regressor: object
     feature_names: List[str]
     metadata: dict = field(default_factory=dict)
 
-    def predict(self, X: List[List[float]]) -> List[float]:
+    def predict(self, X):
         return list(self.regressor.predict(X))
 
     def save(self, path: str) -> None:
@@ -25,11 +27,28 @@ class SpeedupModel:
             return pickle.load(fh)
 
 
-def make_regressor(n_estimators: int = 300, random_state: int = 0) -> RandomForestRegressor:
-    return RandomForestRegressor(
-        n_estimators=n_estimators,
-        max_depth=None,
-        min_samples_leaf=2,
-        random_state=random_state,
-        n_jobs=-1,
-    )
+def _rf(rs=0):
+    return RandomForestRegressor(n_estimators=400, min_samples_leaf=2,
+                                 random_state=rs, n_jobs=-1)
+
+
+def _et(rs=0):
+    return ExtraTreesRegressor(n_estimators=500, min_samples_leaf=2,
+                               random_state=rs, n_jobs=-1)
+
+
+def _hgb(rs=0):
+    return HistGradientBoostingRegressor(
+        max_iter=600, learning_rate=0.05, max_leaf_nodes=31,
+        l2_regularization=0.1, early_stopping=False, random_state=rs)
+
+
+REGRESSORS: Dict[str, Callable] = {
+    "random_forest": _rf,
+    "extra_trees": _et,
+    "hist_gradient_boosting": _hgb,
+}
+
+
+def make_regressor(kind: str = "random_forest", random_state: int = 0):
+    return REGRESSORS.get(kind, _rf)(random_state)

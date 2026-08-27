@@ -11,7 +11,7 @@ import time
 
 from src.minic.harness.sweeper import sweep
 from src.minic.harness.report import render_markdown
-from src.minic.ml.train import cross_validate, train_final
+from src.minic.ml.train import bakeoff, cross_validate, train_final
 
 DATASET = "data/benchmark_dataset.csv"
 MODEL = "data/trained_model.pkl"
@@ -39,16 +39,19 @@ def main(argv=None):
         print(f"reusing {DATASET}")
 
     print("\n" + "=" * 70)
-    cv = cross_validate(DATASET, n_splits=5)
-    print("GroupKFold CV (grouped by program_id):")
-    print(f"  {cv['held_out_programs']} held-out programs over {cv['n_splits']} folds")
-    print(f"  speedup-prediction MAE : {cv['cv_mae']:.4f}")
-    print(f"  baseline (combo 0)     : x{cv['baseline_mean']:.3f}")
-    print(f"  ML-recommended combo   : x{cv['reco_speedup_mean']:.3f}")
-    print(f"  oracle (best in hindsight): x{cv['oracle_speedup_mean']:.3f}")
+    print("GroupKFold CV bake-off (grouped by program_id):")
+    print(f"  {'model':24s} {'MAE':>7} {'reco':>7} {'oracle':>7} {'capture':>8} {'regress%':>9}")
+    rows = bakeoff(DATASET, n_splits=5)
+    for r in rows:
+        print(f"  {r['kind']:24s} {r['cv_mae']:7.3f} x{r['reco_speedup_mean']:5.2f} "
+              f"x{r['oracle_speedup_mean']:5.2f} {100*r['capture']:7.0f}% "
+              f"{100*r['regression_rate']:8.0f}%")
+    cv = rows[0]
+    print(f"\n  winner: {cv['kind']}  ({cv['held_out_programs']} held-out programs, "
+          f"{cv['n_splits']} folds)")
 
-    m = train_final(DATASET, MODEL)
-    print(f"  final model -> {MODEL}  ({m.metadata['n_rows']} rows)")
+    m = train_final(DATASET, MODEL, cv["kind"])
+    print(f"  final model -> {MODEL}  ({m.metadata['n_rows']} rows, {cv['kind']})")
 
     md = render_markdown(DATASET, cv)
     with open(RESULTS, "w", encoding="utf-8") as fh:

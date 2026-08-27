@@ -11,7 +11,7 @@ from src.minic.frontend.lexer import Lexer
 from src.minic.frontend.parser import Parser
 from src.minic.frontend.sema import SemanticAnalyzer
 from src.minic.ir.ir_generator import IRGenerator
-from src.minic.features.extractor import FeatureExtractor
+from src.minic.features import all_features
 from src.minic.optimizer import optimize_program
 from src.minic.optimizer.pass_manager import get_pass_names
 from src.minic.codegen import CEmitter
@@ -42,7 +42,7 @@ def _time_combo(tac, combo, runs, warmup, expected=None):
 
 def cmd_recommend(args):
     ast, tac = _frontend(args.file)
-    feats = FeatureExtractor().extract(ast, tac)
+    feats = all_features(ast, tac)
 
     print(f"# {os.path.basename(args.file)}")
     print("\nstatic features (19):")
@@ -77,13 +77,13 @@ def _verify(tac, combo, args):
 def cmd_benchmark(args):
     ast, tac = _frontend(args.file)
     base = _time_combo(tac, 0, args.runs, args.warmup)
-    combos = [args.combo] if args.combo is not None else [1, 2, 4, 8, 16, 63]
+    combos = [args.combo] if args.combo is not None else [1, 2, 4, 8, 16, 32, 63]
     print(f"# {os.path.basename(args.file)}   baseline (combo 0) = {base.median_ms:.2f} ms  "
           f"exit {base.exit_code}")
     best = (0, base.median_ms)
     for c in combos:
         tr = _time_combo(tac, c, args.runs, args.warmup, expected=base.exit_code)
-        tag = "".join(k for k, b in zip("CDSLR", [c & 1, c & 2, c & 4, c & 8, c & 16]) if b) or "-"
+        tag = "".join(k for k, b in zip("CDSLRU", [c & 1, c & 2, c & 4, c & 8, c & 16, c & 32]) if b) or "-"
         print(f"  combo {c:2d} [{tag:5s}]  {tr.median_ms:8.2f} ms   x{base.median_ms / tr.median_ms:.3f}")
         if tr.median_ms < best[1]:
             best = (c, tr.median_ms)

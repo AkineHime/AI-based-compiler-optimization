@@ -1,7 +1,7 @@
 """Automated feature-extraction + full pass-combo timing sweep over a benchmark corpus.
 
 Produces ``data/benchmark_dataset.csv`` with one row per (program, combo):
-the 19 static features (identical across a program's rows), the 6 flag bits,
+the 27 features (19 static + 8 opportunity, identical across a program's rows), the 6 flag bits,
 the timing, and the speedup vs. that program's combo-0 baseline.
 
 Parallelism is *across programs* with a worker cap below the core count, and the
@@ -21,7 +21,7 @@ from ..frontend.lexer import Lexer
 from ..frontend.parser import Parser
 from ..frontend.sema import SemanticAnalyzer
 from ..ir.ir_generator import IRGenerator
-from ..features.extractor import FeatureExtractor, FEATURE_NAMES
+from ..features import all_features, ALL_FEATURE_NAMES
 from ..optimizer import optimize_program
 from ..optimizer.pass_manager import NUM_COMBOS
 from ..codegen import CEmitter
@@ -32,7 +32,7 @@ FLAG_COLUMNS = ["flag_cf", "flag_dce", "flag_cse", "flag_licm", "flag_sr", "flag
 FLAG_BITS = {"flag_cf": 1, "flag_dce": 2, "flag_cse": 4,
              "flag_licm": 8, "flag_sr": 16, "flag_lu": 32}
 FIELDNAMES = (["program_id", "category"]
-              + [f"f_{n}" for n in FEATURE_NAMES]
+              + [f"f_{n}" for n in ALL_FEATURE_NAMES]
               + ["combo_id"] + FLAG_COLUMNS
               + ["exit_code", "median_time_ms", "min_time_ms", "speedup_ratio"])
 
@@ -62,7 +62,7 @@ def _sweep_one(path: str, combos: List[int], runs: int, warmup: int) -> dict:
         ast, tac = frontend(source)
     except Exception as e:  # noqa: BLE001
         return {"pid": pid, "error": f"frontend: {e}", "rows": []}
-    feats = FeatureExtractor().extract(ast, tac)
+    feats = all_features(ast, tac)
 
     workdir = tempfile.mkdtemp(prefix=f"minic_sw_{pid}_")
     baseline = None
@@ -96,7 +96,7 @@ def _sweep_one(path: str, combos: List[int], runs: int, warmup: int) -> dict:
     for combo in combos:
         med, mn, rc = per_combo.get(combo, (None, None, None))
         row = {"program_id": pid, "category": cat}
-        for n in FEATURE_NAMES:
+        for n in ALL_FEATURE_NAMES:
             row[f"f_{n}"] = feats[n]
         row["combo_id"] = combo
         for col in FLAG_COLUMNS:

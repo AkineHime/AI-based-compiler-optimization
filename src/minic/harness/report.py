@@ -119,9 +119,13 @@ def render_markdown(csv_path: str, cv: dict = None) -> str:
         L.append("## ML recommendation (RandomForest, GroupKFold by program_id)\n")
         L.append("Cross-validation holds *whole programs* out -- a program's rows "
                  "share identical static features, so a random split would leak.\n")
-        L.append(f"- Held-out programs scored: {cv['held_out_programs']}  "
+        L.append(f"- Model: **{cv.get('kind', 'random forest').replace('_', ' ')}**, "
+                 f"{cv['held_out_programs']} held-out programs "
                  f"({cv['n_groups']} programs, {cv['n_splits']} folds)")
         L.append(f"- Speedup-prediction MAE: {cv['cv_mae']:.3f}")
+        if "regression_rate" in cv:
+            L.append(f"- Recommendations that regress the program (>2% slower "
+                     f"than baseline): **{100 * cv['regression_rate']:.0f}%**")
         L.append(f"- **Model-recommended combo, mean true speedup on unseen "
                  f"programs: x{cv['reco_speedup_mean']:.2f}**")
         L.append(f"- Baseline (combo 0): x{cv['baseline_mean']:.2f}   |   "

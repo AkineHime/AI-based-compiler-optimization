@@ -44,6 +44,7 @@ Thumbs.db
 # Person C runtime artifacts
 data/_calib.csv
 data/*.pkl
+data/_*.csv
 
 # Generated benchmark corpus (reproducible: python -m src.minic.harness.gen_corpus --seed 7)
 benchmarks/generated/

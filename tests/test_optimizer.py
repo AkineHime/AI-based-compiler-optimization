@@ -111,7 +111,7 @@ class TestOptimizerSweep(unittest.TestCase):
         self.assertEqual(len(names_0), 0)
 
         names_63 = get_pass_names(63)
-        self.assertEqual(len(names_63), 5)
+        self.assertEqual(len(names_63), 6)  # CF DCE CSE LICM SR LU
 
         names_5 = get_pass_names(1 | 4)  # CF + CSE
         self.assertEqual(len(names_5), 2)

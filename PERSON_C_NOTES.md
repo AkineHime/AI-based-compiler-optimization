@@ -14,10 +14,14 @@ src/minic/harness/
   gen_corpus.py             parametric benchmark generator (single-pattern + composites)
   report.py                 dataset CSV -> RESULTS.md
   plot.py / ground_truth.py chart + oracle table
+src/minic/features/
+  opportunity.py            8 'opportunity' features -- a static count of what each pass *would*
+                            transform (foldable ops, redundant exprs, hoistable/reducible/unrollable
+                            loop work, estimated dynamic instruction count)
 src/minic/ml/
-  dataset.py                CSV -> X (19 features + 6 pass-flag bits), y (speedup), groups (program_id)
-  model.py                  RandomForest wrapper + pickle
-  train.py                  GroupKFold(program_id) CV + final fit
+  dataset.py                CSV -> X (27 features + 6 pass-flag bits), y (speedup), groups (program_id)
+  model.py                  RandomForest / ExtraTrees / HistGradientBoosting + pickle
+  train.py                  GroupKFold(program_id) bake-off, scored on recommendation quality
   predictor.py              recommend_combo(features, model) -> best combo 0..63
 demo/cli.py                 `recommend` / `benchmark`
 demo/app.py + static/       browser playground (Flask): editor -> compile both ways -> speedup +

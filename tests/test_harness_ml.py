@@ -64,8 +64,8 @@ class TestHarness(unittest.TestCase):
 
 class TestDataset(unittest.TestCase):
     def test_features_to_x_width(self):
-        from src.minic.features.extractor import FEATURE_NAMES
-        feats = {n: float(i) for i, n in enumerate(FEATURE_NAMES)}
+        from src.minic.features import ALL_FEATURE_NAMES
+        feats = {n: float(i) for i, n in enumerate(ALL_FEATURE_NAMES)}
         x = features_to_x(feats, combo_id=13)  # CF + CSE + LICM
         self.assertEqual(len(x), len(X_COLUMNS))
         self.assertEqual(x[-6:], [1.0, 0.0, 1.0, 1.0, 0.0, 0.0])  # cf dce cse licm sr lu

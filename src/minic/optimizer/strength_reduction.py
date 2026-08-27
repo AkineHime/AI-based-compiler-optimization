@@ -7,6 +7,13 @@ from ..ir.tac import (
 from ..ir.cfg import build_cfg_for_function, CFG, BasicBlock, Loop
 from ._util import wrap32
 
+_SR_LABEL = [0]
+
+
+def _next_sr() -> int:
+    _SR_LABEL[0] += 1
+    return _SR_LABEL[0]
+
 
 def strength_reduction_pass(func: TACFunction) -> TACFunction:
     """Performs Strength Reduction on loop induction variables (replacing multiplications with additions)."""
@@ -79,10 +86,33 @@ def strength_reduction_pass(func: TACFunction) -> TACFunction:
             preheader_emitted = False
             biv_update_targets = update_insts.get(biv_name, [])
 
+            # If the header is preceded by a jump (e.g. an unroll block's back
+            # edge), a bare pre-header would be unreachable and skipped by the
+            # jump that enters the loop -- give it a label and redirect the
+            # loop's entry edges (everything but the latch) to it.
+            _insts = optimized_func.instructions
+            _hidx = next((k for k, x in enumerate(_insts) if x is header_inst), 0)
+            _prev = _insts[_hidx - 1].opcode if _hidx > 0 else Opcode.LABEL
+            _need_label = _prev in (Opcode.JUMP, Opcode.RETURN,
+                                    Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE)
+            _head_label = str(header_inst.dst)
+            _latch = loop.back_edge[0] if getattr(loop, "back_edge", None) else None
+            _latch_ids = {id(i) for i in _latch.instructions} if _latch else set()
+            _pre_label = None
+            if _need_label:
+                _pre_label = Label(name=f"L_sr_pre_{optimized_func.name}_{_next_sr()}")
+                preheader_init = [TACInstruction(Opcode.LABEL, dst=_pre_label)] + preheader_init
+
             for inst in optimized_func.instructions:
                 if inst is header_inst and not preheader_emitted:
                     new_instructions.extend(preheader_init)
                     preheader_emitted = True
+
+                if (_pre_label is not None and id(inst) not in _latch_ids
+                        and inst.opcode in (Opcode.JUMP, Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE)
+                        and str(inst.dst) == _head_label):
+                    inst = TACInstruction(inst.opcode, dst=_pre_label, src1=inst.src1,
+                                          src2=inst.src2, src3=inst.src3, annotation=inst.annotation)
 
                 if inst is div_inst:
                     # Replace multiplication with copy from sr_temp
