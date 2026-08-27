@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Any
 from .tokens import Token, TokenType, KEYWORDS
 from .error_handler import LexerError
 

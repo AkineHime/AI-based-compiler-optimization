@@ -47,9 +47,16 @@ class TestFeatureExtractor(unittest.TestCase):
         extractor = FeatureExtractor()
         features = extractor.extract(ast, tac)
 
-        self.assertEqual(len(features), 18)
+        self.assertEqual(len(features), 19)
         for name in FEATURE_NAMES:
             self.assertIn(name, features)
+
+        # variable_count was split into named vs temp variable counts
+        self.assertIn("named_variable_count", features)
+        self.assertIn("temp_variable_count", features)
+        self.assertNotIn("variable_count", features)
+        self.assertGreater(features["temp_variable_count"], 0.0)
+        self.assertGreater(features["named_variable_count"], 0.0)
 
         # Check loop depth in matrixSum (nested while loop)
         self.assertGreaterEqual(features["max_loop_depth"], 2.0)

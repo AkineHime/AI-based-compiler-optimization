@@ -19,7 +19,8 @@ FEATURE_NAMES: List[str] = [
     "struct_access_count",
     "function_call_count",
     "recursive_call_count",
-    "variable_count",
+    "named_variable_count",
+    "temp_variable_count",
     "string_ops_count",
     "instruction_density_in_loops",
     "cyclomatic_complexity",
@@ -27,7 +28,14 @@ FEATURE_NAMES: List[str] = [
 
 
 class FeatureExtractor:
-    """Extracts 18 static features from AST and TAC/CFG representations."""
+    """Extracts 19 static features from AST and TAC/CFG representations.
+
+    Note: the original ``variable_count`` feature has been split into
+    ``named_variable_count`` (source-level locals, params and globals) and
+    ``temp_variable_count`` (compiler-generated ``tN`` temporaries), since the
+    two behave very differently under optimization and the split is far easier
+    to introduce before any dataset rows exist than after.
+    """
 
     def __init__(self):
         pass
@@ -49,16 +57,22 @@ class FeatureExtractor:
         struct_access_count = 0
         function_call_count = 0
         recursive_call_count = 0
-        unique_vars: Set[str] = set()
+        unique_named_vars: Set[str] = set()
+        unique_temps: Set[str] = set()
         string_ops_count = 0
         loop_instructions_count = 0
         total_cyclomatic = 0
 
         # Scan global vars
         for g_name, g_type, init_val in tac_prog.global_vars:
-            unique_vars.add(g_name)
+            unique_named_vars.add(g_name)
             if isinstance(init_val, str):
                 string_ops_count += 1
+
+        # Function parameters are source-level named variables too
+        for func in tac_prog.functions:
+            for p_name, _p_type in func.params:
+                unique_named_vars.add(p_name)
 
         # Process each TAC function
         for func in tac_prog.functions:
@@ -90,12 +104,11 @@ class FeatureExtractor:
                 total_instructions += 1
 
                 # Variables & Temporaries
-                if isinstance(inst.dst, (Var, Temp)):
-                    unique_vars.add(str(inst.dst))
-                if isinstance(inst.src1, (Var, Temp)):
-                    unique_vars.add(str(inst.src1))
-                if isinstance(inst.src2, (Var, Temp)):
-                    unique_vars.add(str(inst.src2))
+                for operand in (inst.dst, inst.src1, inst.src2, inst.src3):
+                    if isinstance(operand, Temp):
+                        unique_temps.add(str(operand))
+                    elif isinstance(operand, Var):
+                        unique_named_vars.add(str(operand))
 
                 # Branches
                 if inst.opcode in (Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE):
@@ -154,7 +167,8 @@ class FeatureExtractor:
         features["struct_access_count"] = float(struct_access_count)
         features["function_call_count"] = float(function_call_count)
         features["recursive_call_count"] = float(recursive_call_count)
-        features["variable_count"] = float(len(unique_vars))
+        features["named_variable_count"] = float(len(unique_named_vars))
+        features["temp_variable_count"] = float(len(unique_temps))
         features["string_ops_count"] = float(string_ops_count)
         features["instruction_density_in_loops"] = float(round(loop_density, 4))
         features["cyclomatic_complexity"] = float(total_cyclomatic)
