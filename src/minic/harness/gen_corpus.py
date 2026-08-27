@@ -111,8 +111,8 @@ def generate(n: int, seed: int = 7) -> List[Tuple[str, str]]:
     n_single = int(n * 0.4)
     for j in range(n_single):
         kind = kinds[j % len(kinds)]
-        base = rng.choice([10, 16, 24, 36, 52, 80]) * 1_000_000
-        reps = max(3_000_000, base // _weight_div.get(kind, 1))
+        base = rng.choice([4, 7, 11, 17, 25]) * 1_000_000
+        reps = max(2_000_000, base // _weight_div.get(kind, 1))
         helper, fn = _emit_part(0, kind, rng)
         src = (f"// generated: single pattern '{kind}'\n{helper}{fn}\n"
                f"int main() {{\n    int s = part0({reps});\n"
@@ -128,8 +128,8 @@ def generate(n: int, seed: int = 7) -> List[Tuple[str, str]]:
             if h and h not in helpers:
                 helpers.append(h)
             fns.append(fn)
-            w = rng.choice([8, 16, 32, 60, 110]) * 100_000
-            w = max(700_000, w // _weight_div.get(kind, 1))
+            w = rng.choice([4, 8, 16, 30, 52]) * 100_000
+            w = max(500_000, w // _weight_div.get(kind, 1))
             calls.append(f"    s = s + part{idx}({w});")
         src = ("// generated: composite " + "+".join(chosen) + "\n"
                + "".join(helpers) + "\n" + "\n".join(fns) + "\n"

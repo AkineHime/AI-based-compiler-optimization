@@ -247,11 +247,21 @@
   a { color: var(--accent); text-underline-offset: 2px; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 
+  /* distribution */
+  .hist { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-top: 1.2rem; align-items: end; }
+  .hcol { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .hbar { width: 100%; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 3px; }
+  .hcol.zero .hbar { background: var(--hair); }
+  .hn { font-family: "IBM Plex Mono", monospace; font-size: .78rem; font-variant-numeric: tabular-nums; }
+  .hl { font-family: "IBM Plex Mono", monospace; font-size: .62rem; color: var(--ink-faint); text-align: center; }
+
   @media (max-width: 760px) {
     .stats { grid-template-columns: repeat(2, 1fr); }
     .cols, .ml-grid { grid-template-columns: 1fr; gap: 1.6rem; }
     :root { --label-w: 6.5rem; }
     .row .name { font-size: .72rem; }
+    .hist { grid-template-columns: repeat(7, 1fr); gap: 3px; }
+    .hl { font-size: .5rem; }
   }
 </style>
 
@@ -261,51 +271,29 @@
     <span class="eyebrow">MiniC &nbsp;/&nbsp; compiler optimization &nbsp;/&nbsp; measured, not modelled</span>
     <h1>A restricted C compiler that optimizes, and proves it on the clock</h1>
     <p class="lede">
-      MiniC source is lowered to three-address code, run through five toggleable
+      MiniC source is lowered to three-address code, run through six toggleable
       optimization passes, emitted back to C, and compiled with <b>gcc&nbsp;-O0</b>.
       Pinning the C compiler at <span class="mono">-O0</span> means every speedup
       below is the MiniC optimizer&rsquo;s own work &mdash; not gcc&rsquo;s.
     </p>
-
     <div class="pipe" aria-label="pipeline">
       <span class="step">MiniC .mc</span><span class="arr">&rarr;</span>
       <span class="step">lex / parse / sema</span><span class="arr">&rarr;</span>
-      <span class="step">TAC IR</span><span class="arr">&rarr;</span>
-      <span class="step us">5 passes &times; 32 combos</span><span class="arr">&rarr;</span>
+      <span class="step">TAC IR + 27 features</span><span class="arr">&rarr;</span>
+      <span class="step us" id="pipe-combos">6 passes &times; 64 combos</span><span class="arr">&rarr;</span>
       <span class="step us">TAC &rarr; C</span><span class="arr">&rarr;</span>
       <span class="step">gcc -O0</span><span class="arr">&rarr;</span>
-      <span class="step">timed &times;6</span>
+      <span class="step">timed, min of 15</span>
     </div>
   </header>
 
   <section>
-    <span class="eyebrow">Headline &mdash; 30 benchmarks</span>
-    <div class="stats">
-      <div class="stat">
-        <div class="n accent">&times;1.38</div>
-        <div class="k">geomean, best combo</div>
-        <div class="d">picking the fastest pass combination per program</div>
-      </div>
-      <div class="stat">
-        <div class="n accent">&times;2.66</div>
-        <div class="k">largest speedup</div>
-        <div class="d"><span class="mono">complex_arith</span> &mdash; fixed complex multiply hoisted out of a hot loop</div>
-      </div>
-      <div class="stat">
-        <div class="n">85<small>%</small></div>
-        <div class="k">ML capture</div>
-        <div class="d">of the achievable speedup, on programs the model never timed</div>
-      </div>
-      <div class="stat">
-        <div class="n"><span style="color:var(--baseline)">&times;1.00</span></div>
-        <div class="k">baseline</div>
-        <div class="d">combo 0, no passes &mdash; the reference every bar is measured against</div>
-      </div>
-    </div>
+    <span class="eyebrow" id="eb-headline">Headline</span>
+    <div class="stats" id="stats"></div>
   </section>
 
   <section>
-    <span class="eyebrow">Per-program speedup vs. unoptimized baseline</span>
+    <span class="eyebrow">Top gains &mdash; speedup vs. unoptimized baseline</span>
     <div class="chart" id="chart"></div>
     <div class="legend">
       <span><i class="sw-acc"></i>best pass combo</span>
@@ -315,29 +303,23 @@
   </section>
 
   <section>
+    <span class="eyebrow">Where every program lands</span>
+    <p class="lede" style="font-size:1rem" id="dist-lede"></p>
+    <div class="hist" id="hist"></div>
+  </section>
+
+  <section>
     <span class="eyebrow">Why a recommender, not just &ldquo;-O-everything&rdquo;</span>
     <div class="cols">
       <div>
         <h2>No single combo wins</h2>
-        <p>
-          Turning all five passes on is the best choice for only 10 of 30
-          programs. On the other 20 it leaves speed on the table, and a few
-          strength-reduction-heavy combos make a tight loop up to 11&nbsp;% slower
-          &mdash; the multiply they remove was already cheap under
-          <span class="mono">-O0</span>.
-        </p>
-        <p>
-          A safe fixed default (CSE&nbsp;+&nbsp;LICM, combo&nbsp;12) never
-          regresses and averages <span class="mono">&times;1.16</span>. The best
-          fixed combo (CF&nbsp;+&nbsp;DCE&nbsp;+&nbsp;CSE&nbsp;+&nbsp;LICM,
-          combo&nbsp;15) averages <span class="mono">&times;1.32</span>.
-          Per-program tuning beats both.
-        </p>
+        <p id="nosingle"></p>
+        <p id="fixedcombo"></p>
       </div>
       <div>
         <h2>What the passes buy, by shape of program</h2>
         <table>
-          <thead><tr><th>category</th><th>n</th><th class="num">geomean</th></tr></thead>
+          <thead><tr><th>category</th><th class="num">geomean (best)</th></tr></thead>
           <tbody id="cats"></tbody>
         </table>
         <p style="font-size:.85rem">
@@ -353,116 +335,138 @@
     <span class="eyebrow">The recommendation model</span>
     <div class="ml-grid">
       <div class="card">
-        <h2 style="font-size:1.1rem">RandomForest on 19 static features + 5 pass flags</h2>
+        <h2 style="font-size:1.1rem" id="ml-title"></h2>
         <p style="margin-top:.5rem; color:var(--ink-soft); font-size:.92rem">
-          Trained to predict <span class="mono">speedup_ratio</span> from features
-          read straight off the AST and TAC &mdash; loop nesting, branch density,
-          instruction mix, struct and array access counts &mdash; with no timing
-          needed at inference. Cross-validated with
-          <span class="mono">GroupKFold</span> keyed on <span class="mono">program_id</span>,
-          so whole programs are held out; a program&rsquo;s 32 rows share identical
-          features and a random split would leak them.
+          Trained to predict <span class="mono">speedup_ratio</span> from features read
+          straight off the AST and TAC &mdash; loop nesting, branch density, instruction
+          mix, and a static count of how much each pass <i>would</i> transform &mdash;
+          with no timing at inference. Cross-validated with <span class="mono">GroupKFold</span>
+          on <span class="mono">program_id</span>, so whole programs are held out; a
+          program&rsquo;s 64 rows share identical features and a random split would leak them.
         </p>
-        <div class="feats">
-          <span class="feat top">branch_density</span>
-          <span class="feat top">flag_cf</span>
-          <span class="feat top">flag_licm</span>
-          <span class="feat top">flag_cse</span>
-          <span class="feat">total_instructions</span>
-          <span class="feat">struct_access_count</span>
-          <span class="feat">multiplication_count</span>
-        </div>
-        <p style="margin-top:.7rem; font-size:.8rem; color:var(--ink-faint)">
-          most informative features, in order
-        </p>
+        <div class="feats" id="feats"></div>
+        <p style="margin-top:.7rem; font-size:.8rem; color:var(--ink-faint)">most informative features, in order</p>
       </div>
       <div class="card">
-        <h2 style="font-size:1.1rem">On 30 held-out programs</h2>
+        <h2 style="font-size:1.1rem" id="ml-held"></h2>
         <div class="meter">
           <div class="meter-bar">
-            <div class="meter-fill" style="width:84.6%"></div>
+            <div class="meter-fill" id="meter-fill"></div>
             <div class="meter-mark" style="left:100%" title="oracle"></div>
           </div>
-          <div class="meter-row">
-            <span>baseline &times;1.00</span>
-            <span>recommended &times;1.37</span>
-            <span>oracle &times;1.44</span>
-          </div>
+          <div class="meter-row" id="meter-row"></div>
         </div>
-        <p style="margin-top:1rem; color:var(--ink-soft); font-size:.92rem">
-          The model&rsquo;s pick lands <b>&times;1.37</b> on average against a
-          <b>&times;1.44</b> best-in-hindsight ceiling &mdash; it recovers
-          <b>85&nbsp;%</b> of the available speedup without ever running the
-          program. Speedup-prediction MAE is <span class="mono">0.137</span>.
-        </p>
+        <p style="margin-top:1rem; color:var(--ink-soft); font-size:.92rem" id="ml-summary"></p>
       </div>
     </div>
   </section>
 
   <footer>
-    <span>30 benchmarks &middot; 32 pass combos &middot; 960 timed configurations &middot; every combo verified against combo&nbsp;0&rsquo;s output</span>
+    <span id="foot-left"></span>
     <span>reproduce: <code>python run_experiment.py</code></span>
   </footer>
 </div>
 
 <script>
-  const DATA = [
-    ["complex_arith","structs",2.66,2.66,0],["licm_div","loops",2.57,2.47,0],
-    ["distance_accum","structs",2.28,2.11,0],["bbox","structs",2.01,1.94,0],
-    ["const_fold","loops",1.84,1.79,0],["cse_subexpr","loops",1.78,1.70,0],
-    ["licm_arith","loops",1.74,1.55,0],["nested_licm","loops",1.68,1.54,0],
-    ["cse_mod","loops",1.67,1.56,0],["polynomial","loops",1.66,1.65,0],
-    ["licm_cond","loops",1.59,1.57,0],["cse_chain","loops",1.47,1.42,0],
-    ["const_prop","loops",1.44,1.29,0],["licm_mixed","loops",1.44,1.41,0],
-    ["vector_scale","numeric",1.27,1.20,0],["caesar","strings",1.18,1.16,0],
-    ["matrix_mult","numeric",1.18,0.89,0],["ackermann","recursion",1.16,1.09,0],
-    ["dotprod","numeric",1.15,1.12,0],["conv1d","numeric",1.12,1.12,0],
-    ["stencil_1d","numeric",1.06,1.04,0],["histogram","numeric",1.05,1.04,0],
-    ["newton_isqrt","loops",1.05,0.96,0],["tak","recursion",1.04,1.02,0],
-    ["strength_reduce","loops",1.03,0.89,0],["prime_sieve","loops",1.03,0.99,0],
-    ["fib","recursion",1.02,1.00,0],["vowel_count","strings",1.01,0.99,0],
-    ["gcd_repeat","loops",1.01,0.97,0],["particle_sim","structs",1.01,1.00,0],
-  ];
-  const CATS = [["structs",4,1.87],["loops",16,1.48],["numeric",8,1.14],["strings",2,1.09],["recursion",3,1.07]];
+const RESULTS = {
+  "n_programs": 30, "n_combos": 64,
+  "geomean_best": 1.38, "geomean_all_on": 1.31, "max_speedup": 2.66, "max_program": "complex_arith",
+  "n_all_on_suboptimal": 20, "safe_combo": 12, "safe_geomean": 1.16, "safe_worst": 0.98,
+  "best_fixed_combo": 15, "best_fixed_geomean": 1.32,
+  "cv": {"kind":"random_forest","held_out":30,"n_groups":30,"folds":5,"mae":0.137,
+         "reco":1.37,"oracle":1.44,"baseline":1.0,"capture":85,"regression_rate":7},
+  "data": [["complex_arith","structs",2.66,2.66,63]],
+  "hist": [0,0,0,0,0,0,0],
+  "hist_labels": ["1.0-1.05","1.05-1.1","1.1-1.2","1.2-1.35","1.35-1.6","1.6-2.0","2.0+"],
+  "cats": [["structs",1.87]], "top_features": ["branch_density","flag_cf","flag_licm"]
+};
 
-  const XMIN = 1.0, XMAX = 2.8;
-  const pct = v => ((Math.max(v, XMIN) - XMIN) / (XMAX - XMIN)) * 100;
+const PASS = [["CF",1],["DCE",2],["CSE",4],["LICM",8],["SR",16],["LU",32]];
+const abbr = c => PASS.filter(x => c & x[1]).map(x => x[0]).join("+") || "baseline";
+const R = RESULTS, C = R.cv;
+const g = id => document.getElementById(id);
 
-  const chart = document.getElementById("chart");
-  const scale = document.createElement("div");
-  scale.className = "chart-scale";
-  [1.5, 2.0, 2.5].forEach(t => {
-    const s = document.createElement("span");
-    s.textContent = "×" + t.toFixed(1);
-    s.style.left = pct(t) + "%";
-    scale.appendChild(s);
-  });
-  const s1 = document.createElement("span");
-  s1.textContent = "×1.0"; s1.style.left = "0"; s1.style.transform = "none";
-  scale.appendChild(s1);
-  chart.appendChild(scale);
+g("eb-headline").textContent = "Headline \u2014 " + R.n_programs + " benchmarks, " + R.n_combos + " pass combos";
+g("pipe-combos").textContent = "6 passes \u00d7 " + R.n_combos + " combos";
 
-  DATA.forEach(([name, cat, best, allon, reg], i) => {
-    const row = document.createElement("div");
-    row.className = "row";
-    row.innerHTML =
-      `<div class="name" title="${name}"><b>${name}</b></div>` +
-      `<div class="track">` +
-        [1.5, 2.0, 2.5].map(t => `<span class="gridline" style="left:${pct(t)}%"></span>`).join("") +
-        `<div class="bar${best < 0.995 ? " reg" : ""}" style="width:${Math.max(pct(best), 0.5)}%;animation-delay:${i * 18}ms">` +
-          `<span class="v tnum">×${best.toFixed(2)}</span>` +
-        `</div>` +
-      `</div>`;
-    chart.appendChild(row);
-  });
+g("stats").innerHTML = [
+  ["\u00d7" + R.geomean_best.toFixed(2), "geomean, best combo", "the fastest pass combination, picked per program", true],
+  ["\u00d7" + R.max_speedup.toFixed(2), "largest speedup", R.max_program + " \u2014 hot-loop work removed entirely", true],
+  [C.capture + "%", "ML capture", "of the achievable speedup, on programs the model never timed", false],
+  [C.regression_rate === 0 ? "0" : (C.regression_rate + "%"), "recommender regressions",
+   C.regression_rate === 0 ? "the model never picks a combo slower than baseline"
+     : "of picks land more than 2% below baseline", false]
+].map(x => '<div class="stat"><div class="n' + (x[3] ? " accent" : "") + '">' + x[0] +
+  '</div><div class="k">' + x[1] + '</div><div class="d">' + x[2] + '</div></div>').join("");
 
-  const cats = document.getElementById("cats");
-  CATS.forEach(([name,n,g]) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML =
-      `<td><span class="catbar" style="width:${(g-1)*70}px"></span>${name}</td>` +
-      `<td class="num">${n}</td>` +
-      `<td class="num">×${g.toFixed(2)}</td>`;
-    cats.appendChild(tr);
-  });
+const XMIN = 1.0, XMAX = Math.max(2.4, R.max_speedup + 0.15);
+const pct = v => ((Math.max(v, XMIN) - XMIN) / (XMAX - XMIN)) * 100;
+const chart = g("chart");
+const ticks = [1.5, 2.0, 2.5, 3.0, 3.5].filter(t => t < XMAX);
+const sc = document.createElement("div");
+sc.className = "chart-scale";
+sc.innerHTML = '<span style="left:0;transform:none">\u00d71.0</span>' +
+  ticks.map(t => '<span style="left:' + pct(t) + '%">\u00d7' + t.toFixed(1) + '</span>').join("");
+chart.appendChild(sc);
+R.data.forEach((d, i) => {
+  const name = d[0], best = d[2], combo = d[4];
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML =
+    '<div class="name" title="' + name + ' \u2014 ' + abbr(combo) + '"><b>' + name + '</b></div>' +
+    '<div class="track">' +
+      ticks.map(t => '<span class="gridline" style="left:' + pct(t) + '%"></span>').join("") +
+      '<div class="bar' + (best < 0.995 ? " reg" : "") + '" style="width:' +
+        Math.max(pct(best), 0.5) + '%;animation-delay:' + (i * 16) + 'ms">' +
+        '<span class="v tnum">\u00d7' + best.toFixed(2) + '</span></div>' +
+    '</div>';
+  chart.appendChild(row);
+});
+
+const hmax = Math.max.apply(null, R.hist.concat([1]));
+g("dist-lede").textContent =
+  "Best-combo speedup for all " + R.n_programs + " programs. The passes help loop- and " +
+  "struct-heavy code a lot and leave recursion / string scanning roughly untouched \u2014 " +
+  "the recommender's job is to tell which is which from the static features alone.";
+g("hist").innerHTML = R.hist.map((n, i) =>
+  '<div class="hcol' + (n === 0 ? " zero" : "") + '"><span class="hn">' + n + '</span>' +
+  '<div class="hbar" style="height:' + (Math.round(90 * n / hmax) + 3) + 'px"></div>' +
+  '<span class="hl">\u00d7' + R.hist_labels[i] + '</span></div>').join("");
+
+g("nosingle").innerHTML =
+  "Turning all six passes on is <i>not</i> the per-program best on <b>" +
+  R.n_all_on_suboptimal + " of " + R.n_programs + "</b> programs. Strength reduction and " +
+  "unrolling can each slightly pessimise a tight loop whose multiply or loop overhead " +
+  "was already cheap under <span class=\"mono\">-O0</span>.";
+g("fixedcombo").innerHTML =
+  "A safe fixed default (combo " + R.safe_combo + ", " + abbr(R.safe_combo) + ") never regresses " +
+  "more than <span class=\"mono\">\u00d7" + R.safe_worst.toFixed(2) + "</span> and averages " +
+  "<span class=\"mono\">\u00d7" + R.safe_geomean.toFixed(2) + "</span>. The best fixed combo (" +
+  R.best_fixed_combo + ", " + abbr(R.best_fixed_combo) + ") averages " +
+  "<span class=\"mono\">\u00d7" + R.best_fixed_geomean.toFixed(2) + "</span>. Per-program tuning beats both.";
+
+g("cats").innerHTML = R.cats.map(c =>
+  '<tr><td><span class="catbar" style="width:' + Math.max(2, (c[1] - 1) * 90) + 'px"></span>' +
+  c[0] + '</td><td class="num">\u00d7' + c[1].toFixed(2) + '</td></tr>').join("");
+
+const kn = C.kind.replace(/_/g, " ");
+g("ml-title").textContent = kn.charAt(0).toUpperCase() + kn.slice(1) + " on 27 features + 6 pass flags";
+g("feats").innerHTML = R.top_features.map((f, i) =>
+  '<span class="feat' + (i < 4 ? " top" : "") + '">' + f + '</span>').join("");
+g("ml-held").textContent = "On " + C.held_out + " held-out programs";
+const span = Math.max(C.oracle - 1, 0.01);
+g("meter-fill").style.width = (100 * (C.reco - 1) / span) + "%";
+g("meter-row").innerHTML =
+  "<span>baseline \u00d71.00</span><span>recommended \u00d7" + C.reco.toFixed(2) +
+  "</span><span>oracle \u00d7" + C.oracle.toFixed(2) + "</span>";
+g("ml-summary").innerHTML =
+  "The model&rsquo;s pick lands <b>\u00d7" + C.reco.toFixed(2) + "</b> on average against a <b>\u00d7" +
+  C.oracle.toFixed(2) + "</b> best-in-hindsight ceiling &mdash; it recovers <b>" + C.capture +
+  "%</b> of the available speedup without running the program. Speedup-prediction MAE " +
+  "<span class=\"mono\">" + C.mae.toFixed(3) + "</span>" +
+  (C.regression_rate === 0 ? ", and it never recommends a combo that regresses." : ".");
+
+g("foot-left").textContent =
+  R.n_programs + " benchmarks \u00b7 " + R.n_combos + " pass combos \u00b7 " +
+  (R.n_programs * R.n_combos) + " timed configs \u00b7 every combo verified against combo 0's output";
 </script>
