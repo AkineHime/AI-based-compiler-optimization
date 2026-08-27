@@ -140,7 +140,7 @@ Iterates over all benchmark programs and sweeps all 64 optimization combinations
      - Emit C source with `CEmitter().emit(opt_tac)`.
      - Compile with `gcc -O0`.
      - Measure `median_time_ms`.
-   - Calculate speedup: $\text{speedup\_ratio} = T_{\text{combo 0}} / T_{\text{combo } k}$.
+   - Calculate speedup: $\text{Speedup Ratio} = T_{\text{combo 0}} / T_{\text{combo } k}$.
 2. Output results to `data/benchmark_dataset.csv`.
 
 #### Dataset Column Schema:
@@ -159,7 +159,7 @@ Create `src/minic/ml/train.py`, `src/minic/ml/model.py`, and `src/minic/ml/predi
 
 #### Model Training:
 1. Train a `RandomForestRegressor` / `GradientBoostingRegressor` to predict `speedup_ratio`.
-   $$X = [\text{18 Static Features}, \text{flag\_cf}, \text{flag\_dce}, \text{flag\_cse}, \text{flag\_licm}, \text{flag\_sr}]$$
+   $$X = [\text{18 Static Features}, \text{flag-cf}, \text{flag-dce}, \text{flag-cse}, \text{flag-licm}, \text{flag-sr}]$$
 2. Save trained model to `data/trained_model.pkl` using `pickle` / `joblib`.
 
 #### Online Recommendation Function (`src/minic/ml/predictor.py`):
