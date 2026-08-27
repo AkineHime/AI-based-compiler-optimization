@@ -34,6 +34,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(os.path.dirname(HERE), "data", "trained_model.pkl")
 
 app = Flask(__name__, static_folder=os.path.join(HERE, "static"))
+app.json.sort_keys = False  # keep EXAMPLES in insertion order (first = default)
 
 _MODEL = None
 _MODEL_ERR = None

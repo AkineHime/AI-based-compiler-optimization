@@ -283,9 +283,14 @@ function render(d){
     </div>
     <p class="hint" style="margin-top:20px">
       Our source-level optimizer at <span class="mono">-O0</span> is
-      <b>&times;${speed? speed.toFixed(2):"?"}</b> over doing nothing, and closes
-      <b>${(speed&&o2speed)? Math.round(100*(speed-1)/(o2speed-1)) : "?"}%</b>
-      of the gap to <span class="mono">gcc -O2</span> without the C compiler optimizing at all.
+      <b>&times;${speed? speed.toFixed(2):"?"}</b> over doing nothing${
+        (speed && o2speed)
+          ? (speed >= o2speed
+              ? ` &mdash; the optimized <span class="mono">-O0</span> build even beats <span class="mono">gcc -O2</span> here`
+              : (o2speed > 1.02
+                  ? `, closing <b>${Math.round(100*(speed-1)/(o2speed-1))}%</b> of the gap to <span class="mono">gcc -O2</span>`
+                  : ``))
+          : ``}, with the C compiler doing no optimizing of its own.
       &nbsp;<span style="color:var(--ink-faint)">(${d.elapsed_s}s, ${$("#runs").value} runs each)</span>
     </p>`;
 
