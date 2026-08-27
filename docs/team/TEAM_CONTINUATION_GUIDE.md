@@ -3,7 +3,7 @@
 **Current Milestone:** **Person A, B and a working Person C pipeline are COMPLETE and VERIFIED end to end.**  
 **Remaining:** Person D's fuller benchmark corpus drops into `benchmarks/` with no code change. CLI + browser demos both done.
 
-### Measured result (see `RESULTS.md`, `docs/results.html`)
+### Measured result (see [`../../RESULTS.md`](../../RESULTS.md), [`../results.html`](../results.html))
 
 270 benchmarks (30 hand-written + ~240 parametric) emitted to C and compiled
 with **`gcc -O0`**, swept over all **64 pass combinations** (6 toggleable passes:
@@ -29,8 +29,10 @@ playground -- all operational, `python -m pytest -q` green.
 
 Layout: `src/minic/{frontend,ir,features,optimizer,codegen,harness,ml}`,
 `demo/{cli.py,app.py,static/}`, `run_experiment.py`, `benchmarks/`
-(+ `benchmarks/generated/`, gitignored). Area ownership: `CONTRIBUTIONS.md`.
-Per-role detail: `PERSON_B_NOTES.md`, `PERSON_C_NOTES.md`.
+(+ `benchmarks/generated/`, gitignored). Area ownership:
+[`CONTRIBUTIONS.md`](CONTRIBUTIONS.md). Per-role detail:
+[`PERSON_B_NOTES.md`](PERSON_B_NOTES.md), [`PERSON_C_NOTES.md`](PERSON_C_NOTES.md).
+Repo overview + quickstart: [`../../README.md`](../../README.md).
 
 ```
 src/minic/

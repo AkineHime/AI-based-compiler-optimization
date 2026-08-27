@@ -45,3 +45,18 @@
 - `run_experiment.py`: one command -> sweep -> bake-off -> train -> `RESULTS.md`.
 - Correctness: every combo of every benchmark verified to reproduce the
   unoptimized exit code before its time is recorded.
+- Measured result: 270 programs x 64 combos = 17,280 timed configs; best combo
+  per program geomean **x1.50** (max x4.57); recommender x1.23 held-out, 9% regress.
+- `demo`: default example now shows a real speedup (was the tiny canonical fixture
+  timing at x0.99 noise); honest `gcc -O2` comparison when we already beat `-O2`.
+
+### Repository housekeeping
+- Docs moved under `docs/`: `spec/` (language spec), `planning/` (original design
+  plan, workflow, prompt log), `team/` (per-person notes, contribution map,
+  continuation guide). `README.md`, `CHANGELOG.md`, `RESULTS.md` stay at root.
+- Real `README.md` (was a one-line stub).
+- Spec/planning PDFs untracked (`*.pdf` gitignored); the `.md` alongside is the
+  source of truth. Stray `test.mc` untracked (docs tell you to create your own).
+- `tests/test_optimizer.py`, `tests/test_codegen.py`, `src/minic/driver.py` build
+  into a `tempfile` dir instead of the repo root -- no more `temp_*.exe` litter.
+- `driver --features` now prints all 27 features (was 19 structural only).

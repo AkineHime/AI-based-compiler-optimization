@@ -1,7 +1,10 @@
 # Project Workflow & Action Plan
 ## AI-Based Compiler Optimization Recommendation System
 
-Companion to `minic-language-spec.md` and `persons_work_dist.md`. This document details the system architecture, team roles, build order, and milestones.
+Companion to [`../spec/minic-language-spec.md`](../spec/minic-language-spec.md) and `persons_work_dist.md`. This document details the system architecture, team roles, build order, and milestones.
+
+> **Historical document (original plan).** Current state: 6 passes / 64 combos,
+> 27 ML features, Flask demo. See [`README.md`](../../README.md) and [`../team/`](../team/).
 
 ---
 

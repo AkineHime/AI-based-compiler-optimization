@@ -1,6 +1,8 @@
 import unittest
 import os
+import shutil
 import subprocess
+import tempfile
 from src.minic.frontend import Lexer, Parser, SemanticAnalyzer
 from src.minic.ir import IRGenerator
 from src.minic.optimizer import PassManager, optimize_program, get_pass_names
@@ -14,18 +16,20 @@ class TestOptimizerSweep(unittest.TestCase):
         SemanticAnalyzer(program_code).analyze(ast)
         tac_base = IRGenerator().generate(ast)
         emitter = CEmitter()
+        exe = ".exe" if os.name == "nt" else ""
+        workdir = tempfile.mkdtemp(prefix=f"minic_sweep_{test_name}_")
 
-        for combo in range(64):
-            opt_tac = optimize_program(tac_base, combo)
-            c_code = emitter.emit(opt_tac)
+        try:
+            for combo in range(64):
+                opt_tac = optimize_program(tac_base, combo)
+                c_code = emitter.emit(opt_tac)
 
-            c_file = f"temp_sweep_{test_name}_{combo}.c"
-            bin_file = f"./temp_sweep_{test_name}_{combo}"
+                c_file = os.path.join(workdir, f"{test_name}_{combo}.c")
+                bin_file = os.path.join(workdir, f"{test_name}_{combo}{exe}")
 
-            with open(c_file, "w") as f:
-                f.write(c_code)
+                with open(c_file, "w") as f:
+                    f.write(c_code)
 
-            try:
                 comp = subprocess.run(["gcc", "-O0", "-o", bin_file, c_file], capture_output=True, text=True)
                 self.assertEqual(
                     comp.returncode, 0,
@@ -37,14 +41,12 @@ class TestOptimizerSweep(unittest.TestCase):
                     run.returncode, expected_exit_code,
                     f"Combo {combo} ({bin(combo)}) produced incorrect output {run.returncode}, expected {expected_exit_code} for {test_name}"
                 )
-            finally:
-                if os.path.exists(c_file):
-                    os.remove(c_file)
-                if os.path.exists(bin_file):
-                    os.remove(bin_file)
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
 
     def test_canonical_example_64_combos(self):
-        with open("canonical_example.mc", "r", encoding="utf-8") as f:
+        canon = os.path.join(os.path.dirname(__file__), os.pardir, "canonical_example.mc")
+        with open(canon, "r", encoding="utf-8") as f:
             code = f.read()
         self._run_64_combo_sweep(code, 83, "canonical")
 

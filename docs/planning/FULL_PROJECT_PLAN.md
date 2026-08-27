@@ -2,6 +2,13 @@
 **Project:** AI-Based Compiler Optimization Recommendation System for MiniC  
 **Scope:** Complete End-to-End Engineering Specification, Architectural Design, Module Contracts, and Step-by-Step Build Plan.
 
+> **Historical document (original plan).** The build has since diverged in places:
+> the optimizer has **6 passes / 64 combos** (loop unrolling was added), the ML
+> feature vector is **27** wide (19 structural + 8 opportunity), and the demo is a
+> Flask browser playground rather than Streamlit. For current state see the
+> repo [`README.md`](../../README.md), [`RESULTS.md`](../../RESULTS.md), and
+> [`../team/`](../team/).
+
 ---
 
 ## Table of Contents
@@ -269,7 +276,7 @@ matrix_mult,420,12,3,2,...,6,63,1,1,1,1,1,210.4,1.5232
 - Maintains line and column positions for diagnostic messages.
 
 #### Parser (`parser.py`)
-- Recursive-descent parser matching BNF from [minic-language-spec.md](file:///C:/Users/ashmi/Coding/Projects/minic_optimizer/minic-language-spec.md#L84).
+- Recursive-descent parser matching BNF from [minic-language-spec.md](../spec/minic-language-spec.md).
 - Supports optional `struct` in type specifiers (`type_spec → 'int' | 'float' | 'char' | 'struct'? IDENT`).
 - Operator precedence: `primary` > `postfix` > `unary` > `multiplicative` > `additive` > `relational` > `equality` > `logical AND` > `logical OR` > `assignment`.
 

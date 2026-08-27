@@ -2,7 +2,9 @@ import sys
 import os
 import json
 import argparse
+import shutil
 import subprocess
+import tempfile
 from .frontend.lexer import Lexer
 from .frontend.parser import Parser
 from .frontend.ast_printer import ASTPrinter
@@ -11,7 +13,7 @@ from .frontend.error_handler import MiniCError
 from .ir.ir_generator import IRGenerator
 from .ir.ir_printer import IRPrinter
 from .ir.cfg import build_cfg_for_function
-from .features.extractor import FeatureExtractor
+from .features import all_features
 from .optimizer.pass_manager import optimize_program, get_pass_names
 from .codegen.c_emitter import CEmitter
 
@@ -51,9 +53,8 @@ def process_file(
         ir_gen = IRGenerator()
         tac_prog = ir_gen.generate(ast)
 
-        # 5. Features
-        extractor = FeatureExtractor()
-        features = extractor.extract(ast, tac_prog)
+        # 5. Features (19 structural + 8 opportunity = the 27 the ML model reads)
+        features = all_features(ast, tac_prog)
 
         if show_ast:
             print("=== Abstract Syntax Tree (AST Indented) ===")
@@ -88,7 +89,7 @@ def process_file(
                 print("```\n")
 
         if show_features:
-            print("=== Extracted Static Features (19 metrics) ===")
+            print("=== Extracted Features (19 structural + 8 opportunity) ===")
             print(json.dumps(features, indent=2))
             print()
 
@@ -103,8 +104,9 @@ def process_file(
 
         # 8. Compile and Run with GCC
         if run_binary:
-            c_file = "temp_driver_out.c"
-            bin_file = "./temp_driver_out"
+            workdir = tempfile.mkdtemp(prefix="minic_driver_")
+            c_file = os.path.join(workdir, "out.c")
+            bin_file = os.path.join(workdir, "out" + (".exe" if os.name == "nt" else ""))
             with open(c_file, "w", encoding="utf-8") as f:
                 f.write(c_code)
 
@@ -117,10 +119,7 @@ def process_file(
                 run = subprocess.run([bin_file])
                 print(f"Program exited with return code: {run.returncode}")
             finally:
-                if os.path.exists(c_file):
-                    os.remove(c_file)
-                if os.path.exists(bin_file):
-                    os.remove(bin_file)
+                shutil.rmtree(workdir, ignore_errors=True)
 
     except MiniCError as e:
         print(e, file=sys.stderr)
@@ -134,7 +133,7 @@ def main():
     parser.add_argument("--ast", action="store_true", help="Print Abstract Syntax Tree (indented text)")
     parser.add_argument("--tac", action="store_true", help="Print Three-Address Code")
     parser.add_argument("--cfg", action="store_true", help="Print visual Control Flow Graph (CFG) and Mermaid diagrams")
-    parser.add_argument("--features", action="store_true", help="Print Extracted 19 Static Features (JSON)")
+    parser.add_argument("--features", action="store_true", help="Print the 27 extracted features (19 structural + 8 opportunity), JSON")
     parser.add_argument("--optimize", type=int, default=0, help="6-bit combo mask (0..63): CF DCE CSE LICM SR LU")
     parser.add_argument("--emit-c", action="store_true", help="Emit value-semantics C code")
     parser.add_argument("--run", action="store_true", help="Compile emitted C with gcc -O0 and run")

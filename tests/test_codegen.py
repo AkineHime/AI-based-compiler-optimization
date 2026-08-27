@@ -1,6 +1,8 @@
 import unittest
 import os
+import shutil
 import subprocess
+import tempfile
 from src.minic.frontend import Lexer, Parser, SemanticAnalyzer
 from src.minic.ir import IRGenerator
 from src.minic.codegen import CEmitter
@@ -14,8 +16,9 @@ class TestCEmitter(unittest.TestCase):
         tac = IRGenerator().generate(ast)
         c_code = CEmitter().emit(tac)
 
-        c_file = "temp_test_codegen.c"
-        bin_file = "./temp_test_codegen"
+        workdir = tempfile.mkdtemp(prefix="minic_codegen_")
+        c_file = os.path.join(workdir, "prog.c")
+        bin_file = os.path.join(workdir, "prog" + (".exe" if os.name == "nt" else ""))
 
         with open(c_file, "w") as f:
             f.write(c_code)
@@ -27,10 +30,7 @@ class TestCEmitter(unittest.TestCase):
             run = subprocess.run([bin_file])
             self.assertEqual(run.returncode, expected_exit_code)
         finally:
-            if os.path.exists(c_file):
-                os.remove(c_file)
-            if os.path.exists(bin_file):
-                os.remove(bin_file)
+            shutil.rmtree(workdir, ignore_errors=True)
 
     def test_simple_return(self):
         code = """
