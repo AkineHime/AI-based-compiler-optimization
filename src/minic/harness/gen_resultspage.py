@@ -10,8 +10,8 @@ import re
 from .report import summarize
 from ..ml.train import bakeoff, train_final
 
-PAGE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__)))), "docs", "results.html")
+PAGE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))))), "docs", "results.html")
 
 
 def build(csv_path="data/benchmark_dataset.csv", model_out="data/trained_model.pkl"):
