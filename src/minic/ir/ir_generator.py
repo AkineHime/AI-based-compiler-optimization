@@ -1,3 +1,4 @@
+import re
 from typing import List, Dict, Optional, Tuple, Any, Union
 from ..frontend.ast_nodes import (
     Program, ASTNode, StructDecl, FuncDecl, VarDecl, FieldDecl,
@@ -19,6 +20,7 @@ class IRGenerator:
         self.label_counter: int = 0
         self.current_func: Optional[TACFunction] = None
         self.struct_defs: Dict[str, Dict[str, str]] = {}
+        self.func_return_types: Dict[str, str] = {}
 
     def new_temp(self, type_str: str = "int") -> Temp:
         t = Temp(id=self.temp_counter, type_str=type_str)
@@ -53,6 +55,11 @@ class IRGenerator:
                     field_dict[f.name] = f_type
                 self.struct_defs[decl.name] = field_dict
                 tac_prog.structs[decl.name] = field_dict
+
+        # Step 1b: Record function return types (needed when typing call-result temps)
+        for decl in program.declarations:
+            if isinstance(decl, FuncDecl):
+                self.func_return_types[decl.name] = self._type_to_str(decl.return_type, None)
 
         # Step 2: Global variables and functions
         for decl in program.declarations:
@@ -185,6 +192,108 @@ class IRGenerator:
         self.emit(Opcode.JUMP, dst=l_start)
         self.emit(Opcode.LABEL, dst=l_end)
 
+    # --- L-value stores & type inference ---
+
+    def _type_of(self, expr: ASTNode) -> str:
+        """Best-effort MiniC type string for an expression / l-value."""
+        if isinstance(expr, VarExpr):
+            if self.current_func and expr.name in self.current_func.local_types:
+                return self.current_func.local_types[expr.name]
+            return "int"
+        if isinstance(expr, Literal):
+            return expr.lit_type
+        if isinstance(expr, FieldAccessExpr):
+            base = self._type_of(expr.target)
+            sname = base[7:] if base.startswith("struct ") else base
+            sname = sname.split("[")[0].strip()
+            return self.struct_defs.get(sname, {}).get(expr.field, "int")
+        if isinstance(expr, ArrayAccessExpr):
+            base = self._type_of(expr.target)
+            m = re.match(r"^(struct \w+|\w+)((?:\[\d+\])*)$", base)
+            if not m:
+                return "int"
+            elem, dimpart = m.group(1), m.group(2)
+            dims = re.findall(r"\[(\d+)\]", dimpart)
+            remaining = dims[len(expr.indices):]
+            return elem + "".join(f"[{d}]" for d in remaining)
+        if isinstance(expr, CallExpr):
+            return self.func_return_types.get(expr.func_name, "int")
+        if isinstance(expr, UnaryExpr):
+            return "int" if expr.op == "!" else self._type_of(expr.operand)
+        if isinstance(expr, BinaryExpr):
+            if expr.op in ("==", "!=", "<", "<=", ">", ">=", "&&", "||"):
+                return "int"
+            if "float" in (self._type_of(expr.left), self._type_of(expr.right)):
+                return "float"
+            return "int"
+        return "int"
+
+    def _emit_load(self, dst: Temp, container: Operand, step) -> None:
+        kind, payload = step
+        if kind == "field":
+            self.emit(Opcode.GET_FIELD, dst=dst, src1=container, src2=payload)
+        elif len(payload) == 1:
+            self.emit(Opcode.LOAD_ARR_1D, dst=dst, src1=container, src2=payload[0])
+        else:
+            self.emit(Opcode.LOAD_ARR_2D, dst=dst, src1=container,
+                      src2=payload[0], src3=payload[1])
+
+    def _emit_store(self, container: Operand, step, value: Operand) -> None:
+        kind, payload = step
+        if kind == "field":
+            self.emit(Opcode.SET_FIELD, dst=container, src1=payload, src2=value)
+        elif len(payload) == 1:
+            self.emit(Opcode.STORE_ARR_1D, dst=container, src1=payload[0], src2=value)
+        else:
+            self.emit(Opcode.STORE_ARR_2D, dst=container,
+                      src1=payload[0], src2=payload[1], src3=value)
+
+    def _store(self, target: ASTNode, value: Operand) -> None:
+        """Assign ``value`` into an l-value of arbitrary aggregate nesting.
+
+        Simple targets (``x``, ``a[i]``, ``a[i][j]``, ``s.f``) lower to a single
+        store, exactly as before.  Nested targets (``a[i].f``, ``s.g.h``,
+        ``a[i][j].f = ...``) are lowered as load-the-container / mutate the copy
+        / store the copy back, recursively -- MiniC's value semantics mean the
+        aggregate really is copied, so the write-back is mandatory.
+        """
+        if isinstance(target, VarExpr):
+            self.emit(Opcode.ASSIGN,
+                      dst=Var(name=target.name, type_str=self._type_of(target)),
+                      src1=value)
+            return
+
+        # Collect the accessor chain from the root variable outwards.
+        chain: List[ASTNode] = []
+        node = target
+        while isinstance(node, (ArrayAccessExpr, FieldAccessExpr)):
+            chain.append(node)
+            node = node.target
+        chain.reverse()  # chain[-1] is `target`; chain[0] is closest to the root
+
+        root_op = (Var(name=node.name, type_str=self._type_of(node))
+                   if isinstance(node, VarExpr) else self._lower_expr(node))
+
+        # Evaluate each accessor's indices once.
+        steps = []
+        for acc in chain:
+            if isinstance(acc, ArrayAccessExpr):
+                steps.append(("index", [self._lower_expr(i) for i in acc.indices]))
+            else:
+                steps.append(("field", acc.field))
+
+        # Load every intermediate container into a temp we can mutate.
+        containers: List[Operand] = [root_op]
+        for lvl in range(len(chain) - 1):
+            t = self.new_temp(self._type_of(chain[lvl]))
+            self._emit_load(t, containers[lvl], steps[lvl])
+            containers.append(t)
+
+        # Write the value into the innermost container, then propagate copies back.
+        self._emit_store(containers[-1], steps[-1], value)
+        for lvl in range(len(chain) - 2, -1, -1):
+            self._emit_store(containers[lvl], steps[lvl], containers[lvl + 1])
+
     # --- Expression Lowering ---
 
     def _lower_expr(self, expr: ASTNode) -> Operand:
@@ -197,32 +306,12 @@ class IRGenerator:
 
         elif isinstance(expr, AssignExpr):
             rhs_val = self._lower_expr(expr.value)
-
-            if isinstance(expr.target, VarExpr):
-                var_type = self.current_func.local_types.get(expr.target.name, "int") if self.current_func else "int"
-                dst_var = Var(name=expr.target.name, type_str=var_type)
-                self.emit(Opcode.ASSIGN, dst=dst_var, src1=rhs_val)
-                return dst_var
-
-            elif isinstance(expr.target, ArrayAccessExpr):
-                arr_operand = self._lower_expr(expr.target.target)
-                if len(expr.target.indices) == 1:
-                    idx = self._lower_expr(expr.target.indices[0])
-                    self.emit(Opcode.STORE_ARR_1D, dst=arr_operand, src1=idx, src2=rhs_val)
-                elif len(expr.target.indices) == 2:
-                    idx1 = self._lower_expr(expr.target.indices[0])
-                    idx2 = self._lower_expr(expr.target.indices[1])
-                    self.emit(Opcode.STORE_ARR_2D, dst=arr_operand, src1=idx1, src2=idx2, src3=rhs_val)
-                return rhs_val
-
-            elif isinstance(expr.target, FieldAccessExpr):
-                struct_operand = self._lower_expr(expr.target.target)
-                self.emit(Opcode.SET_FIELD, dst=struct_operand, src1=expr.target.field, src2=rhs_val)
-                return rhs_val
+            self._store(expr.target, rhs_val)
+            return rhs_val
 
         elif isinstance(expr, ArrayAccessExpr):
             arr_operand = self._lower_expr(expr.target)
-            t = self.new_temp()
+            t = self.new_temp(self._type_of(expr))
             if len(expr.indices) == 1:
                 idx = self._lower_expr(expr.indices[0])
                 self.emit(Opcode.LOAD_ARR_1D, dst=t, src1=arr_operand, src2=idx)
@@ -234,7 +323,7 @@ class IRGenerator:
 
         elif isinstance(expr, FieldAccessExpr):
             struct_operand = self._lower_expr(expr.target)
-            t = self.new_temp()
+            t = self.new_temp(self._type_of(expr))
             self.emit(Opcode.GET_FIELD, dst=t, src1=struct_operand, src2=expr.field)
             return t
 
@@ -244,7 +333,7 @@ class IRGenerator:
             for arg_op in arg_operands:
                 self.emit(Opcode.PARAM, src1=arg_op)
 
-            t = self.new_temp()
+            t = self.new_temp(self.func_return_types.get(expr.func_name, "int"))
             self.emit(Opcode.CALL, dst=t, src1=expr.func_name, src2=len(arg_operands))
             return t
 
