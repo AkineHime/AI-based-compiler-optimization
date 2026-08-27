@@ -1,201 +1,235 @@
 # MiniC Compiler Optimizer — Team Continuation & Handoff Guide
 **Project:** AI-Based Compiler Optimization Recommendation System  
-**Current Milestone:** Person A's pipeline is complete and verified.
+**Current Milestone:** **Person A (Front-End & IR) and Person B (Optimizations & Codegen) are COMPLETE and VERIFIED.**  
+**Active Role:** **Person C (Timing Harness, Automated Sweeper, ML Recommendation Engine & Interactive Demo)** with **Person D (Benchmark Corpus & Ground Truth Oracle)**.
 
 ---
 
-## 1. Current State of the Codebase (Person A Handoff)
+## 1. Current State of the Codebase (Person A & B Handoff)
 
-Person A has implemented and tested the entire front-end, intermediate representation (IR), and static feature extractor. All modules are located under `src/minic/`:
+The compiler frontend, intermediate representation, static feature extractor, 5-bit optimization engine, and C codegen are fully operational and covered by **34 passing unit/integration tests**.
 
 ```
 src/minic/
-├── frontend/        # Lexer, Parser, AST Nodes, Semantic Analyzer, ASTPrinter
-├── ir/              # TAC Instruction types, Operands, CFG Builder, Dominators, IRPrinter
-├── features/        # 18-metric Static Feature Extractor
-└── driver.py        # CLI driver for parsing, TAC generation, and feature extraction
+├── frontend/             # [Person A - Done] Lexer, Parser, AST Nodes, Semantic Analyzer, ASTPrinter
+├── ir/                   # [Person A - Done] TAC Opcodes/Operands, CFG, Dominators, Natural Loops, IRPrinter
+├── features/             # [Person A - Done] 18-metric Static Feature Extractor
+├── optimizer/            # [Person B - Done] 5 Passes + 5-Bit PassManager
+│   ├── constant_folding.py   # Pass 1: Constant folding, propagation & branch simplification
+│   ├── dce.py                # Pass 2: Dead code elimination via backward liveness & unreachable pruning
+│   ├── cse.py                # Pass 3: Common subexpression elimination (LVN per basic block)
+│   ├── licm.py               # Pass 4: Loop-invariant code motion (preheader hoisting)
+│   ├── strength_reduction.py # Pass 5: Strength reduction on induction variables
+│   └── pass_manager.py       # 5-bit pass orchestration engine (combos 0 to 63)
+├── codegen/              # [Person B - Done] Value-Semantics IR-to-C Codegen
+│   └── c_emitter.py          # Single-field struct wrappers (arr_int_3_3, str_6) & compound literals
+└── driver.py             # Unified CLI (--tree, --ast, --tac, --cfg, --features, --optimize, --emit-c, --run)
 ```
 
-### How to use Person A's pipeline in Python:
+### Complete Python Pipeline Usage (For Person C):
 ```python
 from src.minic.frontend import Lexer, Parser, SemanticAnalyzer
-from src.minic.ir import IRGenerator, IRPrinter, build_cfg_for_function
+from src.minic.ir import IRGenerator
 from src.minic.features import FeatureExtractor
+from src.minic.optimizer import optimize_program, get_pass_names
+from src.minic.codegen import CEmitter
 
-# 1. Parse source code to AST
-source_code = open("canonical_example.mc").read()
-tokens = Lexer(source_code).tokenize()
-ast = Parser(tokens, source_code).parse()
+# 1. Parse & Lower
+source = open("canonical_example.mc").read()
+ast = Parser(Lexer(source).tokenize(), source).parse()
+SemanticAnalyzer(source).analyze(ast)
+tac_base = IRGenerator().generate(ast)
 
-# 2. Semantic type checking
-SemanticAnalyzer(source_code).analyze(ast)
+# 2. Extract 18 Static ML Features
+features = FeatureExtractor().extract(ast, tac_base)
 
-# 3. Lower AST to Three-Address Code (TAC)
-tac_prog = IRGenerator().generate(ast)
+# 3. Optimize with any of the 64 combinations (0 to 63)
+combo_mask = 63  # All 5 passes enabled (CF + DCE + CSE + LICM + SR)
+opt_tac = optimize_program(tac_base, combo_mask)
 
-# 4. Extract 18 static features
-features = FeatureExtractor().extract(ast, tac_prog)
+# 4. Emit Value-Semantics C Code
+c_code = CEmitter().emit(opt_tac)
 ```
 
 ---
 
-## 2. Person B — Optimization Passes & IR-to-C Codegen
+## 2. Person C — Detailed Action Plan & Architecture
 
-* **Goal:** Implement the 5 toggleable IR optimization passes and emit executable C code that preserves MiniC's value semantics.
-* **Target Directory:** `src/minic/optimizer/` and `src/minic/codegen/`
+* **Goal:** Build the timing harness, automated 64-combo sweeper, train the ML recommendation model with `GroupKFold`, and develop the CLI / Streamlit demo.
+* **Target Directories:** `src/minic/harness/`, `src/minic/ml/`, `demo/`, `data/`
 
-### Step-by-Step Action Plan:
+```mermaid
+flowchart TD
+    subgraph Offline_Pipeline["Offline Pipeline (Dataset Generation & ML)"]
+        BM["MiniC Benchmarks (Person D)"] --> FE["Extract 18 Static Features"]
+        BM --> SW["64-Combo Sweep (Person B Optimizer + Codegen)"]
+        SW --> GCC["gcc -O0 Compile & Time (20 runs, drop 3 warmups)"]
+        FE --> DS["data/benchmark_dataset.csv (2,240 rows)"]
+        GCC --> DS
+        DS --> TRAIN["Train ML Model (RandomForest / GradientBoosting)\nGroupKFold(n_splits=5) by program_id"]
+        TRAIN --> ARTIFACT["data/trained_model.pkl"]
+    end
 
-#### Step 1: Create `src/minic/optimizer/pass_manager.py`
-The pass manager orchestrates the 5 passes using a 5-bit integer (`0` to `63`):
-* Bit 0 (`1`): Constant Folding
-* Bit 1 (`2`): Dead Code Elimination (DCE)
-* Bit 2 (`4`): Common Subexpression Elimination (CSE)
-* Bit 3 (`8`): Loop-Invariant Code Motion (LICM)
-* Bit 4 (`16`): Strength Reduction
+    subgraph Online_Pipeline["Online Pipeline (The Product Demo)"]
+        SRC["New MiniC Program (.mc)"] --> EX["Extract Static Features"]
+        EX --> INF["ML Model Predicts Best Combo (0..63)"]
+        ARTIFACT -.-> INF
+        INF --> OPT["Apply Recommended Passes & Emit C"]
+        OPT --> EXEC["gcc -O0 -> Run Binary"]
+        EXEC --> METRICS["Report Speedup % vs. Baseline & Oracle"]
+    end
+```
+
+---
+
+### Step-by-Step Build Order for Person C:
+
+### Step 1: Build the Timing & GCC Harness (`src/minic/harness/`)
+Create `src/minic/harness/compiler.py` and `src/minic/harness/timer.py`:
+
+1. **`compiler.py`**:
+   - Compiles emitted C code using `gcc -O0 -o binary source.c`.
+   - Uses `subprocess.run(..., capture_output=True, text=True)`.
+   - Captures compilation errors if any and cleans up binary files on completion.
+
+2. **`timer.py`**:
+   - Executes the compiled binary **20 times**.
+   - **Discards the first 3 runs** (warm-up cache / OS page faults).
+   - Measures each run with high-resolution monotonic timer: `time.perf_counter_ns()`.
+   - Calculates the **median execution time in milliseconds (`ms`)** across the remaining 17 runs.
+   - Asserts exit code matches expected ground truth.
 
 ```python
-# Pass signature template:
-def optimize_program(tac_prog: TACProgram, combo_mask: int) -> TACProgram:
-    optimized = copy.deepcopy(tac_prog)
-    for func in optimized.functions:
-        if combo_mask & 1:  # Bit 0
-            func = constant_folding_pass(func)
-        if combo_mask & 4:  # Bit 2
-            func = cse_pass(func)
-        if combo_mask & 8:  # Bit 3
-            func = licm_pass(func)
-        if combo_mask & 16: # Bit 4
-            func = strength_reduction_pass(func)
-        if combo_mask & 2:  # Bit 1 (run DCE last to clean up dead code)
-            func = dce_pass(func)
-    return optimized
+# src/minic/harness/timer.py template:
+import time
+import subprocess
+from typing import Optional, Tuple
+
+def measure_execution_time(bin_path: str, expected_exit_code: Optional[int] = None, runs: int = 20, warmup: int = 3) -> Tuple[float, int]:
+    timings = []
+    exit_code = 0
+    for i in range(runs):
+        start = time.perf_counter_ns()
+        res = subprocess.run([bin_path], capture_output=True)
+        end = time.perf_counter_ns()
+        exit_code = res.returncode
+        if expected_exit_code is not None and exit_code != expected_exit_code:
+            raise RuntimeError(f"Output mismatch: expected {expected_exit_code}, got {exit_code}")
+        if i >= warmup:
+            timings.append((end - start) / 1_000_000.0)  # ms
+    timings.sort()
+    median_time = timings[len(timings) // 2]
+    return median_time, exit_code
 ```
-
-#### Step 2: Implement the 5 Passes
-1. **Constant Folding (`constant_folding.py`):**
-   - Fold binary arithmetic on constants (e.g. `t1 = 3 + 5` $\rightarrow$ `t1 = 8`).
-   - Propagate known constants forward into subsequent instruction operands.
-   - Simplify constant branches (`if 1 goto L1` $\rightarrow$ `goto L1`; `if 0 goto L1` $\rightarrow$ delete).
-2. **Dead Code Elimination (`dce.py`):**
-   - Use `src.minic.ir.cfg.build_cfg_for_function` to get the CFG.
-   - Perform backward liveness analysis: compute `LiveIn` and `LiveOut` sets per basic block.
-   - Remove assignments `t = ...` where `t` is never read downstream and has no side effects.
-3. **Common Subexpression Elimination (`cse.py`):**
-   - Use Local Value Numbering (LVN) per basic block.
-   - Map expression tuples `(OP, val1, val2)` to existing temporaries.
-4. **Loop-Invariant Code Motion (`licm.py`):**
-   - Identify natural loops using `cfg.loops`.
-   - Identify instructions whose operands are defined outside the loop or are constant.
-   - Hoist invariant instructions into the loop preheader.
-5. **Strength Reduction (`strength_reduction.py`):**
-   - Detect induction variables (e.g. `j = i * 4` where `i = i + 1`).
-   - Replace multiplication with repeated addition (`j = j + 4`).
-
-#### Step 3: Implement IR-to-C Codegen (`src/minic/codegen/c_emitter.py`)
-Translate optimized `TACProgram` into C source text:
-* Wrap 1D and 2D arrays and strings into 1-field C `struct`s (`typedef struct { int data[3][3]; } arr_int_3_3;`) so function arguments and assignments use true copy semantics.
-* Lower string literal assignments using C99 compound literals: `(str_6){ .data = "grid1" }`.
-
-#### Step 4: Correctness Check
-Write `tests/test_optimizer.py`:
-- Run all 64 pass combinations on `canonical_example.mc`.
-- Compile each with `gcc -O0` and assert that **all 64 combinations output exactly 83**.
 
 ---
 
-## 3. Person D — Benchmark Corpus & Correctness Oracle
+### Step 2: Build the Synthetic Data Generator (`src/minic/ml/synthetic.py`)
+To build and test the ML training pipeline before Person D finishes all 35 benchmarks:
+- Generate `data/synthetic_dataset.csv` matching the exact schema with 35 fake programs $\times$ 64 combos = 2,240 rows.
+- Give loop-heavy programs higher speedups for LICM (`combo_mask & 8`) and Strength Reduction (`combo_mask & 16`).
 
-* **Goal:** Write 30–40 MiniC benchmark programs and an automated ground-truth reference table.
-* **Target Directory:** `benchmarks/`
+---
 
-### Step-by-Step Action Plan:
+### Step 3: Automated 64-Combo Sweeper (`src/minic/harness/sweeper.py`)
+Iterates over all benchmark programs and sweeps all 64 optimization combinations:
+1. For each `.mc` file in `benchmarks/`:
+   - Parse and extract 18 static features.
+   - For `combo` in `0..63`:
+     - Optimize TAC using `optimize_program(tac, combo)`.
+     - Emit C source with `CEmitter().emit(opt_tac)`.
+     - Compile with `gcc -O0`.
+     - Measure `median_time_ms`.
+   - Calculate speedup: $\text{speedup\_ratio} = T_{\text{combo 0}} / T_{\text{combo } k}$.
+2. Output results to `data/benchmark_dataset.csv`.
 
-#### Step 1: Write 30–40 `.mc` Benchmark Programs
-Distribute programs across 5 categories in `benchmarks/`:
-1. `benchmarks/numeric/` (8 programs): `matrix_mult.mc`, `matrix_transpose.mc`, `conv2d_3x3.mc`, `vector_dot.mc`, `gaussian_elim.mc`, etc.
-2. `benchmarks/structs/` (7 programs): `point_distance.mc`, `particle_sim.mc`, `bounding_box.mc`, `complex_arithmetic.mc`, etc.
-3. `benchmarks/strings/` (6 programs): `palindrome.mc`, `caesar_cipher.mc`, `string_reverse.mc`, `run_length.mc`, etc.
-4. `benchmarks/recursion/` (7 programs): `fibonacci.mc`, `hanoi.mc`, `quicksort.mc`, `tree_search.mc`, etc.
-5. `benchmarks/loops/` (7 programs): `licm_stress.mc`, `strength_reduction_stress.mc`, `polynomial_eval.mc`, `prime_sieve.mc`, etc.
-
-#### Step 2: Ensure High Loop Trip Counts
-* **Critical Rule:** Under `gcc -O0`, execution times must be **>100ms** so that optimization speedups exceed clock noise.
-* Add an outer loop wrapper in `main()` (e.g. repeat calculation 10,000 to 500,000 times) to ensure measurable execution duration.
-
-#### Step 3: Create `benchmarks/ground_truth.csv`
-For each `.mc` program, write an equivalent standard `.c` program, compile with GCC, run it, and log the expected return code/output:
+#### Dataset Column Schema:
 ```csv
-program_id,category,expected_output
-matrix_mult,numeric,45200
-particle_sim,structs,1204
-palindrome,strings,1
+program_id,category,total_instructions,basic_block_count,loop_count,max_loop_depth,branch_count,branch_density,arithmetic_ops_count,multiplication_count,constant_load_count,array_access_count,array_2d_access_count,struct_access_count,function_call_count,recursive_call_count,variable_count,string_ops_count,instruction_density_in_loops,cyclomatic_complexity,combo_id,flag_cf,flag_dce,flag_cse,flag_licm,flag_sr,median_time_ms,speedup_ratio
 ```
-
-#### Step 4: Draft Report Theoretical Section
-Author Section 2 of the final report: *"Why MiniC omits pointers & dynamic memory, and why value semantics eliminate alias analysis complexity."*
 
 ---
 
-## 4. Person C — Timing Harness, ML Recommendation Model & Demo
+### Step 4: ML Recommendation Pipeline (`src/minic/ml/`)
+Create `src/minic/ml/train.py`, `src/minic/ml/model.py`, and `src/minic/ml/predictor.py`.
 
-* **Goal:** Automate 64-combo timing sweeps, train the pass recommendation model, and build the interactive demo.
-* **Target Directory:** `src/minic/harness/`, `src/minic/ml/`, `demo/`
+#### Crucial Safeguard: GroupKFold Cross-Validation
+* **MUST USE `GroupKFold(n_splits=5)` grouped strictly by `program_id`.**
+* **Why:** Standard random splits leak data because 64 rows share the exact same 18 static features. `GroupKFold` guarantees entire programs are held out during training and validation.
 
-### Step-by-Step Action Plan:
+#### Model Training:
+1. Train a `RandomForestRegressor` / `GradientBoostingRegressor` to predict `speedup_ratio`.
+   $$X = [\text{18 Static Features}, \text{flag\_cf}, \text{flag\_dce}, \text{flag\_cse}, \text{flag\_licm}, \text{flag\_sr}]$$
+2. Save trained model to `data/trained_model.pkl` using `pickle` / `joblib`.
 
-#### Step 1: Build Timing Harness (`src/minic/harness/`)
-1. `compiler.py`: Calls `gcc -O0 -o temp.exe temp.c` using `subprocess.run()`.
-2. `timer.py`: Executes `temp.exe` 20 times:
-   - Discards the first 3 runs (warm-up).
-   - Takes the median of the remaining 17 runs using `time.perf_counter_ns()`.
-
-#### Step 2: Automated Sweep Script (`src/minic/harness/sweeper.py`)
-Loop over all 35 benchmarks $\times$ 64 combinations = **2,240 rows**:
-1. For each program, extract 18 static features via Person A's `FeatureExtractor`.
-2. For each combo $0..63$, apply Person B's `optimize_program`, generate C code via `CEmitter`, compile with `gcc -O0`, and record `median_time_ms`.
-3. Compute speedup ratio: $\text{speedup} = T_{\text{combo 0}} / T_{\text{combo } k}$.
-4. Save to `data/benchmark_dataset.csv`.
-
-#### Step 3: Train Machine Learning Model (`src/minic/ml/`)
-1. **Model:** Train a `RandomForestRegressor` or `GradientBoostingRegressor` on `[18 Static Features + 5 One-Hot Combo Flags] -> speedup_ratio`.
-2. **Cross-Validation:** MUST use `GroupKFold(n_splits=5)` grouped strictly by `program_id` to prevent data leakage across combinations of the same benchmark.
-3. **Inference / Recommendation:**
-   ```python
-   def recommend_combo(features: dict) -> int:
-       # Evaluate predicted speedup for all 64 combos and pick the argmax
-       best_combo = 0
-       best_speedup = 0.0
-       for combo in range(64):
-           pred = model.predict([features + one_hot(combo)])
-           if pred > best_speedup:
-               best_speedup = pred
-               best_combo = combo
-       return best_combo
-   ```
-
-#### Step 4: Interactive Demo UI (`demo/app.py`)
-Build a lightweight Streamlit app:
-- Input: Paste MiniC source code.
-- Features: Displays radar chart of extracted static metrics.
-- Recommendation: Highlights the recommended optimization combo (e.g. `CF + CSE + LICM`).
-- Speedup: Shows baseline execution time vs. optimized execution time and percentage speedup.
+#### Online Recommendation Function (`src/minic/ml/predictor.py`):
+```python
+def recommend_combo(features: dict, model) -> Tuple[int, float, List[str]]:
+    best_combo = 0
+    best_predicted_speedup = -1.0
+    
+    for combo in range(64):
+        flags = [(combo >> 0) & 1, (combo >> 1) & 1, (combo >> 2) & 1, (combo >> 3) & 1, (combo >> 4) & 1]
+        x = list(features.values()) + flags
+        pred = model.predict([x])[0]
+        if pred > best_predicted_speedup:
+            best_predicted_speedup = pred
+            best_combo = combo
+            
+    return best_combo, best_predicted_speedup, get_pass_names(best_combo)
+```
 
 ---
 
-## 5. Summary Dependency Graph
+### Step 5: Interactive Demos (`demo/`)
 
+#### 1. CLI Tool (`demo/cli.py`):
+```bash
+# Recommend best optimization flags for a MiniC file
+python3 -m demo.cli optimize canonical_example.mc --recommend
+
+# Run full benchmark and report speedup vs unoptimized baseline
+python3 -m demo.cli benchmark canonical_example.mc
 ```
-[Person A: Front-End & TAC] (DONE)
-        │
-        ├───> [Person B: 5 Passes + IR-to-C Codegen]
-        │             │
-        │             v
-        └───> [Person D: 35 Benchmarks] ───> [Person C: Sweep 2,240 Rows]
-                                                      │
-                                                      v
-                                            [Person C: Train ML Model]
-                                                      │
-                                                      v
-                                            [Person C: Streamlit Demo]
+
+#### 2. Streamlit Web App (`demo/app.py`):
+- **Left Panel:** MiniC source code editor + syntax tree / CFG viewer.
+- **Middle Panel:** 18 static features radar chart + loop depth metrics.
+- **Right Panel:** ML recommendation card, before/after TAC comparison, live execution speedup bar chart.
+
+---
+
+## 3. Person D — Benchmark Corpus & Oracle Coordination
+
+* **Goal:** Write **30–40 MiniC programs** across 5 categories in `benchmarks/`:
+  1. `benchmarks/numeric/` (8 programs): `matrix_mult.mc`, `conv2d_3x3.mc`, `lu_decomposition.mc`, `dot_product.mc`, `gaussian_elim.mc`, `jacobi.mc`, etc.
+  2. `benchmarks/structs/` (7 programs): `point_distance.mc`, `particle_sim.mc`, `bounding_box.mc`, `complex_arithmetic.mc`, `polygon_area.mc`, etc.
+  3. `benchmarks/strings/` (6 programs): `palindrome.mc`, `caesar_cipher.mc`, `string_reverse.mc`, `substring_search.mc`, `run_length.mc`, etc.
+  4. `benchmarks/recursion/` (7 programs): `fibonacci.mc`, `tower_of_hanoi.mc`, `ackermann.mc`, `quicksort.mc`, `merge_sort.mc`, etc.
+  5. `benchmarks/loops/` (7 programs): `licm_stress.mc`, `strength_reduction_stress.mc`, `polynomial_eval.mc`, `stencil_1d.mc`, `prime_sieve.mc`, etc.
+
+* **Critical Rule for Person D:** Loop trip counts must be high (thousands to millions of iterations) so execution time under `gcc -O0` is **>100ms**, exceeding clock noise.
+* **Ground Truth Oracle:** Provide `benchmarks/ground_truth.csv` with `(program_id, expected_output)`.
+
+---
+
+## 4. Verification Commands for Person C
+
+Person C can run these commands immediately to verify Person A & B's modules:
+
+```bash
+# 1. Run full 34-test suite (all green)
+python3 -m unittest discover tests
+
+# 2. View visual AST tree
+python3 -m src.minic.driver canonical_example.mc --tree
+
+# 3. View visual CFG flowcharts
+python3 -m src.minic.driver canonical_example.mc --cfg
+
+# 4. View extracted 18 static features (JSON)
+python3 -m src.minic.driver canonical_example.mc --features
+
+# 5. Optimize with combo 63 and run
+python3 -m src.minic.driver canonical_example.mc --optimize 63 --run
 ```
