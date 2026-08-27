@@ -17,6 +17,11 @@ PASS_FLAGS = {
     16: "Strength Reduction (SR)",
 }
 
+# 5 independently toggleable passes -> 2**5 = 32 distinct combinations.
+# (Some project docs say "64"; that double-counts an unused 6th bit -- combo
+#  ids 32..63 are identical to 0..31.)
+NUM_COMBOS = 32
+
 
 def get_pass_names(combo_mask: int) -> List[str]:
     """Return list of enabled pass names for a given 5-bit combo mask (0 to 63)."""

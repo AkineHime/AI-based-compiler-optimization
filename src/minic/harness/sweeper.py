@@ -1,7 +1,7 @@
-"""Automated feature-extraction + 64-combo timing sweep over a benchmark corpus.
+"""Automated feature-extraction + full pass-combo timing sweep over a benchmark corpus.
 
 Produces ``data/benchmark_dataset.csv`` with one row per (program, combo):
-the 19 static features (identical across a program's 64 rows), the 5 flag bits,
+the 19 static features (identical across a program's rows), the 5 flag bits,
 the median wall-clock time, and the speedup vs. that program's combo-0 baseline.
 """
 import csv
@@ -19,7 +19,7 @@ from ..frontend.sema import SemanticAnalyzer
 from ..ir.ir_generator import IRGenerator
 from ..features.extractor import FeatureExtractor, FEATURE_NAMES
 from ..optimizer import optimize_program
-from ..optimizer.pass_manager import PASS_FLAGS
+from ..optimizer.pass_manager import PASS_FLAGS, NUM_COMBOS
 from ..codegen import CEmitter
 from .compiler import compile_c, cleanup
 from .timer import measure_execution_time
@@ -51,7 +51,7 @@ def sweep(bench_root: str = "benchmarks",
           combos: Optional[List[int]] = None,
           programs: Optional[List[str]] = None,
           progress=print) -> str:
-    combos = list(range(64)) if combos is None else combos
+    combos = list(range(NUM_COMBOS)) if combos is None else combos
     paths = programs if programs is not None else discover_benchmarks(bench_root)
     if not paths:
         raise SystemExit(f"no .mc benchmarks found under {bench_root!r}")
@@ -141,12 +141,12 @@ def sweep(bench_root: str = "benchmarks",
 
 def _main(argv=None):
     import argparse
-    p = argparse.ArgumentParser(description="MiniC 64-combo timing sweep")
+    p = argparse.ArgumentParser(description="MiniC pass-combo timing sweep")
     p.add_argument("--bench-root", default="benchmarks")
     p.add_argument("--out", default="data/benchmark_dataset.csv")
     p.add_argument("--runs", type=int, default=12)
     p.add_argument("--warmup", type=int, default=3)
-    p.add_argument("--combos", default="", help="comma list; default all 64")
+    p.add_argument("--combos", default="", help="comma list; default all 32")
     args = p.parse_args(argv)
     combos = [int(x) for x in args.combos.split(",")] if args.combos else None
     sweep(args.bench_root, args.out, args.runs, args.warmup, combos)

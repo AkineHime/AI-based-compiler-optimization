@@ -1,4 +1,4 @@
-"""Timing harness + automated 64-combo sweep (Person C)."""
+"""Timing harness + automated pass-combo sweep (Person C)."""
 from .compiler import compile_c, cleanup, CompileResult
 from .timer import measure_execution_time, TimingResult
 from .sweeper import sweep, discover_benchmarks, frontend

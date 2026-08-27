@@ -5,7 +5,7 @@ from .dce import dce_pass
 from .cse import cse_pass
 from .licm import licm_pass
 from .strength_reduction import strength_reduction_pass
-from .pass_manager import PassManager, optimize_program, get_pass_names, PASS_FLAGS
+from .pass_manager import PassManager, optimize_program, get_pass_names, PASS_FLAGS, NUM_COMBOS
 
 __all__ = [
     "constant_folding_pass",
@@ -17,4 +17,5 @@ __all__ = [
     "optimize_program",
     "get_pass_names",
     "PASS_FLAGS",
+    "NUM_COMBOS",
 ]

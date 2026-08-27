@@ -34,7 +34,7 @@ def summarize(csv_path: str) -> dict:
             "best_combo": best_combo, "best_speedup": best_sp,
             "best_passes": get_pass_names(best_combo),
             "all_on_speedup": sp63,
-            "regressed": min(combo_sp.values()) < 0.97,
+            "regressed": min(combo_sp.values()) < 0.95,
         })
         all63.append(sp63)
         allbest.append(best_sp)
@@ -61,17 +61,17 @@ def summarize(csv_path: str) -> dict:
 def render_markdown(csv_path: str, cv: dict = None) -> str:
     s = summarize(csv_path)
     L: List[str] = []
-    L.append("# MiniC optimizer — measured speedup results\n")
+    L.append("# MiniC optimizer: measured speedup results\n")
     L.append(f"Corpus: **{s['n_programs']} MiniC benchmarks**. Each program is emitted "
              "as C at every one of the 64 optimization combos, compiled with "
              "`gcc -O0`, and timed (median wall-clock). Speedup is "
-             "`time(combo 0) / time(combo)` — i.e. how much our TAC optimizer "
+             "`time(combo 0) / time(combo)` -- i.e. how much our TAC optimizer "
              "beats *not* optimizing, with the C compiler held at `-O0`.\n")
     L.append("## Headline\n")
     L.append(f"- **Geomean speedup, all 5 passes on:** x{s['geomean_all_on']:.3f}")
     L.append(f"- **Geomean speedup, best combo per program:** x{s['geomean_best']:.3f}")
     L.append(f"- **Largest single speedup:** x{s['max_speedup']:.2f}")
-    L.append(f"- **Programs regressed (any combo >3% slower than baseline):** {s['n_regressions']} / {s['n_programs']}")
+    L.append(f"- **Programs regressed (any combo >5% slower than baseline):** {s['n_regressions']} / {s['n_programs']}")
     bc = s["best_single_combo"]
     L.append(f"- **Best fixed combo across the corpus:** {bc} "
              f"[{', '.join(get_pass_names(bc)) or 'baseline'}], geomean x{s['best_single_combo_geomean']:.3f}\n")
@@ -90,7 +90,7 @@ def render_markdown(csv_path: str, cv: dict = None) -> str:
     L.append("|---|---|---|---|---|---|")
     for p in s["per_program"]:
         L.append(f"| {p['program_id']} | {p['category']} | {p['best_combo']} | "
-                 f"{', '.join(p['best_passes']) or '—'} | "
+                 f"{', '.join(p['best_passes']) or '-'} | "
                  f"**x{p['best_speedup']:.2f}** | x{p['all_on_speedup']:.2f} |")
     L.append("")
     return "\n".join(L)

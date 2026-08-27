@@ -1,6 +1,6 @@
 """End-to-end Person C pipeline:  sweep -> dataset -> train (GroupKFold) -> RESULTS.md
 
-    python run_experiment.py                 # full 64-combo sweep, then train + report
+    python run_experiment.py                 # full 32-combo sweep, then train + report
     python run_experiment.py --quick         # combos {0,CF,DCE,CSE,LICM,SR,all} only
     python run_experiment.py --skip-sweep    # reuse data/benchmark_dataset.csv
 """
@@ -17,7 +17,7 @@ DATASET = "data/benchmark_dataset.csv"
 MODEL = "data/trained_model.pkl"
 RESULTS = "RESULTS.md"
 
-QUICK_COMBOS = [0, 1, 2, 4, 8, 16, 63]
+QUICK_COMBOS = [0, 1, 2, 4, 8, 16, 31]
 
 
 def main(argv=None):

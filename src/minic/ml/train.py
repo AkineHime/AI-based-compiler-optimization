@@ -1,6 +1,6 @@
 """Train the speedup-regression model with GroupKFold(program_id) CV.
 
-Random splits would leak: a program's 64 rows share the same 19 static features,
+Random splits would leak: a program's rows share the same 19 static features,
 so a plain split puts near-duplicates on both sides.  GroupKFold holds whole
 programs out, which is the only honest estimate of "predict for a program we
 have never timed".
@@ -14,10 +14,10 @@ from sklearn.model_selection import GroupKFold
 
 from .dataset import load_dataset
 from .model import SpeedupModel, make_regressor
-from ..optimizer.pass_manager import get_pass_names
+from ..optimizer.pass_manager import get_pass_names, NUM_COMBOS
 
 
-def _recommend_for_program(model, feats_row_builder, combos=range(64)):
+def _recommend_for_program(model, feats_row_builder, combos=range(NUM_COMBOS)):
     best_combo, best_pred = 0, -1e9
     for c in combos:
         pred = model.predict([feats_row_builder(c)])[0]

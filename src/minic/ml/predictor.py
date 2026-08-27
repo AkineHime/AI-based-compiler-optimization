@@ -3,11 +3,11 @@ from typing import List, Tuple
 
 from .dataset import features_to_x
 from .model import SpeedupModel
-from ..optimizer.pass_manager import get_pass_names
+from ..optimizer.pass_manager import get_pass_names, NUM_COMBOS
 
 
 def recommend_combo(feature_dict: dict, model: SpeedupModel,
-                    combos=range(64)) -> Tuple[int, float, List[str]]:
+                    combos=range(NUM_COMBOS)) -> Tuple[int, float, List[str]]:
     best_combo, best_pred = 0, -1e9
     for c in combos:
         pred = model.predict([features_to_x(feature_dict, c)])[0]
@@ -19,7 +19,7 @@ def recommend_combo(feature_dict: dict, model: SpeedupModel,
 def rank_combos(feature_dict: dict, model: SpeedupModel, top: int = 5):
     scored = [
         (c, model.predict([features_to_x(feature_dict, c)])[0])
-        for c in range(64)
+        for c in range(NUM_COMBOS)
     ]
     scored.sort(key=lambda t: -t[1])
     return scored[:top]
