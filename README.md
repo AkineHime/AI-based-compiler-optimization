@@ -24,7 +24,7 @@ The C compiler is pinned at `-O0` on purpose: the measured delta is what *our*
 optimizer contributed, not what `gcc` would have done anyway. `gcc -O2` is shown
 only as a reference point.
 
-Full numbers: [`RESULTS.md`](RESULTS.md) · visual report: [`docs/results.html`](docs/results.html).
+Full numbers: [`RESULTS.md`](RESULTS.md) · visual report: [`docs/results.html`](docs/results.html) · stage-by-stage walkthrough of one program through the whole pipeline: [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md).
 
 ## Quickstart
 
@@ -97,6 +97,7 @@ run_experiment.py     one command: sweep → dataset → bake-off → train → 
 RESULTS.md            current measured results
 docs/
   results.html        the visual results report
+  WALKTHROUGH.md      one program traced through every stage (lexer → … → ML)
   spec/               MiniC language specification
   planning/           original design plan, workflow, prompt log
   team/               per-person notes, contribution map, continuation guide

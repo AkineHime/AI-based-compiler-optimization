@@ -33,6 +33,7 @@ Layout: `src/minic/{frontend,ir,features,optimizer,codegen,harness,ml}`,
 [`CONTRIBUTIONS.md`](CONTRIBUTIONS.md). Per-role detail:
 [`PERSON_B_NOTES.md`](PERSON_B_NOTES.md), [`PERSON_C_NOTES.md`](PERSON_C_NOTES.md).
 Repo overview + quickstart: [`../../README.md`](../../README.md).
+Pipeline explained stage by stage: [`../WALKTHROUGH.md`](../WALKTHROUGH.md).
 
 ```
 src/minic/
