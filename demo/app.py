@@ -93,20 +93,30 @@ int main() {
     return ((acc % 251) + 251) % 251;
 }
 """,
-    "recursion (little to optimize)": """int fib(int n) {
-    if (n < 2) { return n; }
-    return fib(n - 1) + fib(n - 2);
+    "recursion -- model declines": """int ack(int m, int n) {
+    if (m == 0) { return n + 1; }
+    if (n == 0) { return ack(m - 1, 1); }
+    return ack(m - 1, ack(m, n - 1));
 }
 int main() {
     int s = 0;
     int r = 0;
-    while (r < 5) { s = s + fib(30); r = r + 1; }
+    while (r < 7) { s = s + ack(3, 7); r = r + 1; }
     return ((s % 251) + 251) % 251;
 }
 """,
-    "canonical example (returns 83)": open(
-        os.path.join(os.path.dirname(HERE), "canonical_example.mc"), encoding="utf-8"
-    ).read(),
+    "constant folding + divides": """int main() {
+    int p = 17;
+    int q = 23;
+    int acc = 0;
+    int i = 0;
+    while (i < 14000000) {
+        acc = acc + 2000000000 / p + 1999999997 / q + p * q * p + q * q * p;
+        i = i + 1;
+    }
+    return ((acc % 251) + 251) % 251;
+}
+""",
 }
 
 
@@ -217,14 +227,19 @@ def compile_endpoint():
         combo, pred = NUM_COMBOS - 1, None  # fall back to "all passes"
 
     base_c = CEmitter().emit(optimize_program(tac, 0))
-    opt_c = CEmitter().emit(optimize_program(tac, combo))
 
     baseline = _time_build(base_c, "base", "-O0", runs)
     if not baseline["ok"]:
         return jsonify({"ok": False, "stage": "baseline compile/run", "error": baseline["error"]})
     exit_code = baseline["exit_code"]
 
-    optimized = _time_build(opt_c, "opt", "-O0", runs, expect=exit_code)
+    if combo == 0:
+        # model chose not to optimize -> the "optimized" build IS the baseline;
+        # timing it a second time would just show measurement noise.
+        optimized = dict(baseline)
+    else:
+        opt_c = CEmitter().emit(optimize_program(tac, combo))
+        optimized = _time_build(opt_c, "opt", "-O0", runs, expect=exit_code)
     o2 = _time_build(base_c, "o2", "-O2", runs, expect=exit_code)
 
     resp = {

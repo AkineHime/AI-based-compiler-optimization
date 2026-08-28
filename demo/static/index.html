@@ -268,12 +268,14 @@ function render(d){
   const bar = (ms, cls) => `<div class="bartrack"><div class="barfill ${cls}" style="width:${Math.max(2, 100*ms/worst)}%"></div></div>`;
 
   $("#v-result").innerHTML = `
-    <div class="big tnum">&times;${speed? speed.toFixed(2): "?"}<small> vs unoptimized</small></div>
+    <div class="big tnum">${d.abstained
+      ? `no change<small> &mdash; model left it alone</small>`
+      : `&times;${speed? speed.toFixed(2): "?"}<small> vs unoptimized</small>`}</div>
     <div class="sub">${d.model_loaded
       ? `model picked combo <b>${d.combo}</b> &mdash; ${d.passes.length? d.pass_abbrs.join(" + ") : "no passes"}`
       : `combo ${d.combo} (all passes &mdash; no model loaded)`}${
         d.predicted_speedup? ` &nbsp;&middot;&nbsp; predicted &times;${d.predicted_speedup.toFixed(2)}`:""}</div>
-    ${d.abstained? `<p class="hint" style="color:var(--ink-faint);margin-top:6px">No combo cleared the model&rsquo;s &times;${d.abstain_margin} confidence margin, so it recommends leaving optimization off rather than risk a slowdown.</p>`:""}
+    ${d.abstained? `<p class="hint" style="color:var(--ink-faint);margin-top:6px">No combo cleared the model&rsquo;s &times;${d.abstain_margin} confidence margin, so it compiles the program as-is.</p>`:""}
     <div class="rv">return value = ${d.return_value}
       ${d.outputs_match ? '<span class="ok">&#10003; both builds agree</span>' : '<span class="no">&#10007; MISMATCH</span>'}</div>
     <div class="bars">
@@ -282,15 +284,19 @@ function render(d){
       <div class="barrow"><span class="lab">gcc -O2 (ref)</span>${o2.ok? bar(o2.median_ms,"b2"): "<span>&mdash;</span>"}<span class="v">${o2.ok? fmt(o2.median_ms)+" ms":"&mdash;"}</span></div>
     </div>
     <p class="hint" style="margin-top:20px">
-      Our source-level optimizer at <span class="mono">-O0</span> is
-      <b>&times;${speed? speed.toFixed(2):"?"}</b> over doing nothing${
+      ${d.abstained
+        ? `The model read the program&rsquo;s features and predicted no combo would clear its
+           confidence margin, so it recommends compiling as-is. On this kind of code
+           (deep recursion, little loop work) the passes have almost nothing to remove.`
+        : `Our source-level optimizer at <span class="mono">-O0</span> is
+           <b>&times;${speed? speed.toFixed(2):"?"}</b> over doing nothing` + (
         (speed && o2speed)
           ? (speed >= o2speed
               ? ` &mdash; the optimized <span class="mono">-O0</span> build even beats <span class="mono">gcc -O2</span> here`
               : (o2speed > 1.02
                   ? `, closing <b>${Math.round(100*(speed-1)/(o2speed-1))}%</b> of the gap to <span class="mono">gcc -O2</span>`
                   : ``))
-          : ``}, with the C compiler doing no optimizing of its own.
+          : ``) + `, with the C compiler doing no optimizing of its own.`}
       &nbsp;<span style="color:var(--ink-faint)">(${d.elapsed_s}s, ${$("#runs").value} runs each)</span>
     </p>`;
 
