@@ -203,8 +203,34 @@ $("#theme").onclick = () => {
   if(cm) cm.refresh();
 };
 
-function setCode(v){ if(cm) cm.setValue(v); else $("#code").value = v; }
+const CUSTOM = "__custom__";
+const CUSTOM_TEMPLATE = `// Custom program. MiniC = C without pointers, malloc, or I/O.
+// int / float / char / struct, arrays, while / for, functions, recursion.
+// The program's result is main()'s return value (0-255).
+
+int main() {
+    int k = 6;
+    int acc = 0;
+    int i = 0;
+    while (i < 20000000) {
+        acc = acc + i * k + i * k + k * k * 11;
+        i = i + 1;
+    }
+    return ((acc % 251) + 251) % 251;
+}
+`;
+
+let loadingExample = false;
+function setCode(v){ loadingExample = true; if(cm) cm.setValue(v); else $("#code").value = v; loadingExample = false; }
 function getCode(){ return cm ? cm.getValue() : $("#code").value; }
+
+// if the editor no longer matches the selected example, flip the dropdown to Custom
+function syncDropdown(){
+  if(loadingExample) return;
+  const sel = $("#examples"), code = getCode();
+  const match = Object.keys(EXAMPLES).find(k => EXAMPLES[k].trim() === code.trim());
+  sel.value = match || CUSTOM;
+}
 
 if(window.CodeMirror){
   cm = CodeMirror.fromTextArea($("#code"), {
@@ -212,6 +238,9 @@ if(window.CodeMirror){
     theme:"default", viewportMargin:Infinity
   });
   cm.setSize("100%","100%");
+  cm.on("change", syncDropdown);
+} else {
+  $("#code").addEventListener("input", syncDropdown);
 }
 
 fetch("/api/examples").then(r=>r.json()).then(d=>{
@@ -220,13 +249,27 @@ fetch("/api/examples").then(r=>r.json()).then(d=>{
   Object.keys(EXAMPLES).forEach(k=>{
     const o = document.createElement("option"); o.value = k; o.textContent = k; sel.appendChild(o);
   });
-  setCode(EXAMPLES[Object.keys(EXAMPLES)[0]]);
+  const custom = document.createElement("option");
+  custom.value = CUSTOM; custom.textContent = "Custom — write your own";
+  sel.appendChild(custom);
+  const first = Object.keys(EXAMPLES)[0];
+  setCode(EXAMPLES[first]); sel.value = first;
   if(!d.model_loaded){
     $("#v-result").insertAdjacentHTML("beforeend",
       `<p class="hint" style="color:var(--warn)">No trained model found &mdash; falling back to &ldquo;all passes&rdquo;. Run <span class="mono">python run_experiment.py</span> to train one.</p>`);
   }
 });
-$("#examples").onchange = e => setCode(EXAMPLES[e.target.value]);
+$("#examples").onchange = e => {
+  const v = e.target.value;
+  if(v === CUSTOM){
+    // only drop in the template if the editor still holds an unmodified example
+    const onExample = Object.values(EXAMPLES).some(s => s.trim() === getCode().trim());
+    if(onExample || !getCode().trim()) setCode(CUSTOM_TEMPLATE);
+    if(cm) cm.focus();
+  } else {
+    setCode(EXAMPLES[v]);
+  }
+};
 
 // tabs
 document.querySelectorAll(".tabs button").forEach(b=>{

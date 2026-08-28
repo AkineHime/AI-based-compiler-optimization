@@ -5,6 +5,15 @@ import argparse
 import shutil
 import subprocess
 import tempfile
+
+# The AST tree and CFG printers use Unicode box-drawing glyphs; the default
+# Windows console codepage (cp1252) can't encode them. Force UTF-8 output.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
 from .frontend.lexer import Lexer
 from .frontend.parser import Parser
 from .frontend.ast_printer import ASTPrinter
