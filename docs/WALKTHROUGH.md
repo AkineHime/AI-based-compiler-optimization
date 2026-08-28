@@ -4,14 +4,15 @@ This traces **one program through every stage** of the system: lexer → parser 
 AST → semantic analysis → TAC IR → control-flow graph → feature extraction →
 optimization passes → C codegen → compile & time → ML pass recommendation.
 
-Every block below is real output from the tools in this repo. Reproduce any of it
-with `python -m src.minic.driver <file.mc> --<flag>`.
+Every block below is real output from the tools in this repo. The running example
+is [`docs/walk.mc`](walk.mc) — reproduce any stage with
+`python -m src.minic.driver docs/walk.mc --<flag>`.
 
 ---
 
 ## 0 · The example program
 
-`walk.mc`:
+[`docs/walk.mc`](walk.mc):
 
 ```c
 int main() {
@@ -472,7 +473,7 @@ return the same value as combo 0.
 
 ```bash
 cd "path/to/repo"
-F=canonical_example.mc        # or any .mc file
+F=docs/walk.mc               # the example above — or canonical_example.mc, or your own
 
 python -m src.minic.driver $F --tree                    # AST
 python -m src.minic.driver $F --tac                     # TAC IR
