@@ -1,0 +1,15 @@
+# Normalize line endings — store everything as LF in the repo.
+* text=auto eol=lf
+*.mc   text eol=lf
+*.py   text eol=lf
+*.md   text eol=lf
+*.csv  text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+
+# Binary — never touch
+*.png  binary
+*.pdf  binary
+*.pkl  binary
+*.npz  binary
+*.exe  binary

@@ -52,9 +52,10 @@ Thumbs.db
 data/_calib.csv
 data/*.pkl
 data/_*.csv
+data/*.npz          # TAC token sequences — regenerate: python -m src.minic.ml.sequences
 
-# Generated benchmark corpus (reproducible: python -m src.minic.harness.gen_corpus --seed 7)
-benchmarks/generated/
+# benchmarks/generated/ IS committed (reproducibility for the model comparison);
+# regenerate with: python -m src.minic.harness.gen_corpus --n 870 --seed 7 --validate
 
 # Scratch test file described in docs/team/PERSON_A_VERIFICATION_GUIDE.md
 test.mc

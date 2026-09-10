@@ -1,0 +1,32 @@
+// generated: composite sr+branch
+
+int part0(int reps) {
+    int acc = 0;
+    int i = 0;
+    while (i < reps) {
+        acc = acc + i * 23 + i * 7 + i * 13 + 5;
+        i = i + 1;
+    }
+    return acc;
+}
+
+int part1(int reps) {
+    int acc = 0;
+    int i = 0;
+    while (i < reps) {
+        if (i - (i / 3) * 3 == 0) {
+            acc = acc + i * 20 + 31 * 3;
+        } else {
+            acc = acc + i * 4 - (i - (i / 5) * 5);
+        }
+        i = i + 1;
+    }
+    return acc;
+}
+
+int main() {
+    int s = 0;
+    s = s + part0(5200000);
+    s = s + part1(800000);
+    return ((s % 251) + 251) % 251;
+}

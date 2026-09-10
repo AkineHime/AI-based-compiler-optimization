@@ -31,7 +31,7 @@ from .timer import measure_execution_time
 FLAG_COLUMNS = ["flag_cf", "flag_dce", "flag_cse", "flag_licm", "flag_sr", "flag_lu"]
 FLAG_BITS = {"flag_cf": 1, "flag_dce": 2, "flag_cse": 4,
              "flag_licm": 8, "flag_sr": 16, "flag_lu": 32}
-FIELDNAMES = (["program_id", "category"]
+FIELDNAMES = (["program_id", "category", "pattern"]
               + [f"f_{n}" for n in ALL_FEATURE_NAMES]
               + ["combo_id"] + FLAG_COLUMNS
               + ["exit_code", "median_time_ms", "min_time_ms", "speedup_ratio"])
@@ -46,6 +46,16 @@ def discover_benchmarks(root: str = "benchmarks") -> List[str]:
     return sorted(glob.glob(os.path.join(root, "**", "*.mc"), recursive=True))
 
 
+def _pattern_map(root: str) -> Dict[str, str]:
+    """program_id -> optimization pattern, from generated/_manifest.csv if present."""
+    out: Dict[str, str] = {}
+    for man in glob.glob(os.path.join(root, "**", "_manifest.csv"), recursive=True):
+        with open(man, encoding="utf-8") as fh:
+            for row in csv.DictReader(fh):
+                out[row["program_id"]] = row["pattern"]
+    return out
+
+
 def frontend(source: str):
     tokens = Lexer(source).tokenize()
     ast = Parser(tokens, source).parse()
@@ -54,9 +64,11 @@ def frontend(source: str):
     return ast, tac
 
 
-def _sweep_one(path: str, combos: List[int], runs: int, warmup: int) -> dict:
+def _sweep_one(path: str, combos: List[int], runs: int, warmup: int,
+               pattern: str = "") -> dict:
     pid = os.path.splitext(os.path.basename(path))[0]
     cat = _category(path)
+    pattern = pattern or cat
     source = open(path, encoding="utf-8").read()
     try:
         ast, tac = frontend(source)
@@ -95,7 +107,7 @@ def _sweep_one(path: str, combos: List[int], runs: int, warmup: int) -> dict:
     rows = []
     for combo in combos:
         med, mn, rc = per_combo.get(combo, (None, None, None))
-        row = {"program_id": pid, "category": cat}
+        row = {"program_id": pid, "category": cat, "pattern": pattern}
         for n in ALL_FEATURE_NAMES:
             row[f"f_{n}"] = feats[n]
         row["combo_id"] = combo
@@ -129,6 +141,10 @@ def sweep(bench_root: str = "benchmarks",
         raise SystemExit(f"no .mc benchmarks found under {bench_root!r}")
     if workers is None:
         workers = max(1, min(8, (os.cpu_count() or 2) // 2))
+    pat_of = _pattern_map(bench_root)
+
+    def _pat(p):
+        return pat_of.get(os.path.splitext(os.path.basename(p))[0], "")
 
     os.makedirs(os.path.dirname(out_csv) or ".", exist_ok=True)
     t0 = time.time()
@@ -149,10 +165,11 @@ def sweep(bench_root: str = "benchmarks",
 
     if workers == 1:
         for p in paths:
-            note(_sweep_one(p, combos, runs, warmup))
+            note(_sweep_one(p, combos, runs, warmup, _pat(p)))
     else:
         with ProcessPoolExecutor(max_workers=workers) as ex:
-            futs = {ex.submit(_sweep_one, p, combos, runs, warmup): p for p in paths}
+            futs = {ex.submit(_sweep_one, p, combos, runs, warmup, _pat(p)): p
+                    for p in paths}
             for fut in as_completed(futs):
                 note(fut.result())
 
