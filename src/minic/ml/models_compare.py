@@ -16,7 +16,7 @@ from typing import Dict, List
 
 import numpy as np
 from sklearn.linear_model import Ridge
-from sklearn.model_selection import GroupKFold
+from sklearn.model_selection import KFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -134,58 +134,64 @@ def _sk_factory(name, seed):
     return make_regressor(name, seed)
 
 
+def _program_folds(pids: List[str], n_splits: int, seed: int):
+    """One shared program partition every model is evaluated on."""
+    P = len(pids)
+    kf = KFold(n_splits=min(n_splits, P), shuffle=True, random_state=seed)
+    return list(kf.split(np.arange(P)))
+
+
 def cross_validate_model(name: str, ds, seqs, cat_of: Dict[str, str],
-                         n_splits: int = 5, seed: int = 0) -> dict:
+                         n_splits: int = 5, seed: int = 0, folds=None) -> dict:
     spec = MODEL_SPECS[name]
+    combos = np.asarray(ds.combo_ids)
+    groups = np.asarray(ds.groups)
     X = np.asarray(ds.X, float)
     y = np.asarray(ds.y, float)
-    groups = np.asarray(ds.groups)
-    combos = np.asarray(ds.combo_ids)
-    gkf = GroupKFold(n_splits=min(n_splits, len(set(groups))))
+
+    pa = to_program_arrays(ds, seqs if spec in ("sequence", "hybrid") else None)
+    pids = pa["pids"]
+    pidx = {g: i for i, g in enumerate(pids)}
+    row_of = {g: np.where(groups == g)[0] for g in pids}
+    folds = folds or _program_folds(pids, n_splits, seed)
 
     per_prog: List[dict] = []
     fit_times: List[float] = []
+    use_torch = name in TORCH_MODELS
+    need_tokens = spec in ("sequence", "hybrid")
 
-    if spec == "tabular" and name not in TORCH_MODELS:
-        # row-based sklearn path
-        for tr, te in gkf.split(X, y, groups):
-            reg = _sk_factory(name, seed)
-            t0 = time.perf_counter()
-            reg.fit(X[tr], y[tr])
-            fit_times.append(time.perf_counter() - t0)
-            for g in sorted(set(groups[te])):
-                idx = np.where(groups == g)[0]
-                true_by = {int(combos[i]): float(y[i]) for i in idx}
-                pred = reg.predict(X[idx])
-                pred_by = {int(combos[i]): float(p) for i, p in zip(idx, pred)}
-                per_prog.append({"pid": g, "category": cat_of.get(g, "?"),
-                                 "true_by": true_by, "pred_by": pred_by})
-    else:
-        # program-batched torch path (mlp / cnn1d / gru / hybrids)
-        from sklearn.model_selection import KFold
-        from .models_torch import TorchSpeedupModel
-        need_tokens = spec in ("sequence", "hybrid")
-        pa = to_program_arrays(ds, seqs if need_tokens else None)
-        P = len(pa["pids"])
-        kf = KFold(n_splits=min(n_splits, P), shuffle=True, random_state=seed)
-        for tr_p, te_p in kf.split(np.arange(P)):
+    for tr_p, te_p in folds:
+        if use_torch:
+            from .models_torch import TorchSpeedupModel
             m = TorchSpeedupModel(name, seed=seed, n_static=pa["n_static"])
             tok_tr = pa["tokens"][tr_p] if need_tokens else None
-            tok_te = pa["tokens"][te_p] if need_tokens else None
             t0 = time.perf_counter()
             m.fit(pa["feats"][tr_p], tok_tr, pa["speedup"][tr_p], pa["mask"][tr_p])
             fit_times.append(time.perf_counter() - t0)
-            pred = m.predict(pa["feats"][te_p], tok_te)  # (n_te, 64)
+            pred = m.predict(pa["feats"][te_p],
+                             pa["tokens"][te_p] if need_tokens else None)  # (n_te, 64)
             for row_i, p_i in enumerate(te_p):
                 exists = np.where(pa["mask"][p_i])[0]
-                true_by = {int(c): float(pa["speedup"][p_i, c]) for c in exists}
-                pred_by = {int(c): float(pred[row_i, c]) for c in exists}
-                per_prog.append({"pid": pa["pids"][p_i],
-                                 "category": cat_of.get(pa["pids"][p_i], "?"),
-                                 "true_by": true_by, "pred_by": pred_by})
+                per_prog.append({
+                    "pid": pids[p_i], "category": cat_of.get(pids[p_i], "?"),
+                    "true_by": {int(c): float(pa["speedup"][p_i, c]) for c in exists},
+                    "pred_by": {int(c): float(pred[row_i, c]) for c in exists}})
+        else:
+            tr_rows = np.concatenate([row_of[pids[i]] for i in tr_p])
+            reg = _sk_factory(name, seed)
+            t0 = time.perf_counter()
+            reg.fit(X[tr_rows], y[tr_rows])
+            fit_times.append(time.perf_counter() - t0)
+            for p_i in te_p:
+                idx = row_of[pids[p_i]]
+                pred = reg.predict(X[idx])
+                per_prog.append({
+                    "pid": pids[p_i], "category": cat_of.get(pids[p_i], "?"),
+                    "true_by": {int(combos[i]): float(y[i]) for i in idx},
+                    "pred_by": {int(combos[i]): float(p) for i, p in zip(idx, pred)}})
 
     agg = _aggregate(per_prog)
-    agg.update({"model": name, "n_splits": gkf.n_splits,
+    agg.update({"model": name, "n_splits": len(folds),
                 "held_out_programs": len(per_prog),
                 "train_time_s": statistics.mean(fit_times) if fit_times else 0.0})
     return agg
@@ -202,12 +208,14 @@ def compare(csv_path: str, seq_path: str = "data/tac_sequences.npz",
     seqs = load_sequences(seq_path)
     cat_of = _category_map(csv_path)
     models = models or list(MODEL_SPECS)
+    pids = sorted(set(np.asarray(ds.groups)))
+    folds = _program_folds(pids, n_splits, seed)  # every model, same partition
 
     rows = []
     for name in models:
         progress(f"  {name} ...")
         t0 = time.time()
-        r = cross_validate_model(name, ds, seqs, cat_of, n_splits, seed)
+        r = cross_validate_model(name, ds, seqs, cat_of, n_splits, seed, folds=folds)
         r["wall_s"] = round(time.time() - t0, 1)
         rows.append(r)
         progress(f"    reco x{r['reco_speedup_mean']:.3f}  "

@@ -49,22 +49,25 @@ class _CNNEnc(nn.Module):
 
 
 class _GRUEnc(nn.Module):
-    """1-layer bi-GRU over packed (padding-skipped) sequences -- CPU-friendly."""
+    """1-layer GRU over packed (padding-skipped) sequences.  Deliberately compact
+    -- an RNN on 640-token programs on CPU is the slowest model here; a larger /
+    bidirectional GRU would need a GPU (noted as a limitation)."""
 
-    def __init__(self, emb=32, hid=48):
+    GRU_CAP = 320
+
+    def __init__(self, emb=24, hid=48):
         super().__init__()
         self.emb = nn.Embedding(VOCAB_SIZE, emb, padding_idx=PAD)
-        self.gru = nn.GRU(emb, hid, num_layers=1, batch_first=True, bidirectional=True)
-        self.proj = nn.Linear(2 * hid, H)
+        self.gru = nn.GRU(emb, hid, num_layers=1, batch_first=True)
+        self.proj = nn.Linear(hid, H)
 
     def forward(self, feats, tokens):
+        tokens = tokens[:, :self.GRU_CAP]
         lengths = (tokens != PAD).sum(dim=1).clamp_min(1).cpu()
-        x = self.emb(tokens)
         packed = nn.utils.rnn.pack_padded_sequence(
-            x, lengths, batch_first=True, enforce_sorted=False)
-        _, hn = self.gru(packed)               # hn (2, B, hid)
-        last = torch.cat([hn[-2], hn[-1]], dim=-1)
-        return torch.relu(self.proj(last))
+            self.emb(tokens), lengths, batch_first=True, enforce_sorted=False)
+        _, hn = self.gru(packed)               # hn (1, B, hid)
+        return torch.relu(self.proj(hn[-1]))
 
 
 class _HybridEnc(nn.Module):
@@ -112,12 +115,23 @@ def _build(kind, n_static):
 class TorchSpeedupModel:
     """sklearn-ish wrapper, program-batched.  fit() takes per-program arrays."""
 
-    def __init__(self, kind, seed=0, n_static=27, epochs=60, batch=64, lr=1e-3):
+    # (epochs, patience, batch) per family -- the GRU is the CPU bottleneck
+    _CFG = {
+        "mlp":          (120, 15, 128),
+        "cnn1d":        (60,  10, 96),
+        "cnn1d_hybrid": (60,  10, 96),
+        "gru":          (30,  6,  128),
+        "gru_hybrid":   (30,  6,  128),
+    }
+
+    def __init__(self, kind, seed=0, n_static=27, epochs=None, batch=None, lr=1e-3):
+        e, p, b = self._CFG.get(kind, (60, 10, 96))
         self.kind = kind
         self.seed = seed
         self.n_static = n_static
-        self.epochs = epochs
-        self.batch = batch
+        self.epochs = epochs or e
+        self.patience = p
+        self.batch = batch or b
         self.lr = lr
         self.net = None
 
@@ -142,7 +156,7 @@ class TorchSpeedupModel:
         val, trn = perm[:n_val], perm[n_val:]
         opt = torch.optim.Adam(self.net.parameters(), lr=self.lr, weight_decay=1e-5)
 
-        best_val, best_state, patience = float("inf"), None, 0
+        best_val, best_state, bad = float("inf"), None, 0
         for ep in range(self.epochs):
             self.net.train()
             for s in range(0, len(trn), self.batch):
@@ -163,11 +177,13 @@ class TorchSpeedupModel:
                 vloss = float(((vp - sp[val]) ** 2 * mk[val]).sum()
                               / mk[val].sum().clamp_min(1))
             if vloss < best_val - 1e-4:
-                best_val, best_state, patience = vloss, {
-                    k: v.detach().clone() for k, v in self.net.state_dict().items()}, 0
+                best_val = vloss
+                best_state = {k: v.detach().clone()
+                              for k, v in self.net.state_dict().items()}
+                bad = 0
             else:
-                patience += 1
-                if patience >= 10:
+                bad += 1
+                if bad >= self.patience:
                     break
         if best_state is not None:
             self.net.load_state_dict(best_state)
