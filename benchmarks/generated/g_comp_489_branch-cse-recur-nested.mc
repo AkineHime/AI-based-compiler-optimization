@@ -37,7 +37,7 @@ int part2(int reps) {
     int acc = 0;
     int i = 0;
     while (i < reps) {
-        acc = acc + rec2(460);
+        acc = acc + rec2(240);
         i = i + 1;
     }
     return acc;
@@ -61,9 +61,9 @@ int part3(int reps) {
 
 int main() {
     int s = 0;
-    s = s + part0(3000000);
-    s = s + part1(533333);
-    s = s + part2(6000);
-    s = s + part3(60000);
+    s = s + part0(666666);
+    s = s + part1(300000);
+    s = s + part2(4000);
+    s = s + part3(40000);
     return ((s % 251) + 251) % 251;
 }

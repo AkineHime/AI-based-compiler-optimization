@@ -7,13 +7,13 @@ int part0(int reps) {
     int acc = 0;
     int i = 0;
     while (i < reps) {
-        acc = acc + rec0(200);
+        acc = acc + rec0(100);
         i = i + 1;
     }
     return acc;
 }
 
 int main() {
-    int s = part0(96153);
+    int s = part0(12000);
     return ((s % 251) + 251) % 251;
 }

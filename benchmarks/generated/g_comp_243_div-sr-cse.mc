@@ -33,8 +33,8 @@ int part2(int reps) {
 
 int main() {
     int s = 0;
-    s = s + part0(750000);
-    s = s + part1(3000000);
-    s = s + part2(1000000);
+    s = s + part0(400000);
+    s = s + part1(2000000);
+    s = s + part2(500000);
     return ((s % 251) + 251) % 251;
 }

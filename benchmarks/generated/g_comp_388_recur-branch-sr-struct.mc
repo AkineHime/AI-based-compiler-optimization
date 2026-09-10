@@ -8,7 +8,7 @@ struct __Box { int x0; int y0; int x1; int y1; };
 int part0(int reps) {
     int acc = 0;
     for (int i = 0; i < reps; i = i + 1) {
-        acc = acc + rec0(200);
+        acc = acc + rec0(100);
     }
     return acc;
 }
@@ -47,9 +47,9 @@ int part3(int reps) {
 
 int main() {
     int s = 0;
-    s = s + part0(6153);
-    s = s + part1(3000000);
-    s = s + part2(3000000);
-    s = s + part3(1500000);
+    s = s + part0(4000);
+    s = s + part1(666666);
+    s = s + part2(2000000);
+    s = s + part3(666666);
     return ((s % 251) + 251) % 251;
 }

@@ -46,16 +46,16 @@ int part2(int reps) {
 int part3(int reps) {
     int acc = 0;
     for (int i = 0; i < reps; i = i + 1) {
-        acc = acc + rec3(460);
+        acc = acc + rec3(240);
     }
     return acc;
 }
 
 int main() {
     int s = 0;
-    s = s + part0(400000);
-    s = s + part1(533333);
-    s = s + part2(533333);
-    s = s + part3(6153);
+    s = s + part0(300000);
+    s = s + part1(300000);
+    s = s + part2(300000);
+    s = s + part3(4000);
     return ((s % 251) + 251) % 251;
 }

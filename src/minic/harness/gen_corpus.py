@@ -105,7 +105,7 @@ def _p_nested(rng, idx) -> Tuple[str, str]:
 
 def _p_recur(rng, idx) -> Tuple[str, str]:
     k = rng.randint(1, 7)
-    depth = rng.choice([120, 200, 320, 460])
+    depth = rng.choice([60, 100, 160, 240])
     helper = (f"int rec{idx}(int n) {{\n"
               f"    if (n < 2) {{ return n; }}\n"
               f"    return rec{idx}(n - 1) + {k};\n}}\n")
@@ -120,24 +120,22 @@ PATTERNS: Dict[str, Callable] = {
 _NEEDS_X = {"cse"}
 
 
+# rough cost per iteration relative to a plain `acc += ...`; tuned so combo-0
+# runtime lands ~25-70 ms (single) / ~15-40 ms (composite part).
+_COST = {"div": 5, "cse": 4, "cf": 3, "struct": 3, "neutral": 3, "branch": 3,
+         "unroll": 2, "nested": 26, "recur": 1500}
+
+
 def _single_reps(kind: str, rng) -> int:
-    base = rng.choice([4, 7, 11, 17, 25]) * 1_000_000
-    if kind == "nested":
-        return max(150_000, base // 14)          # x inner cap (6..24)
-    if kind == "recur":
-        return max(15_000, base // 260)          # x recursion depth (120..460)
-    if kind == "branch":
-        return max(2_000_000, base)
-    return max(2_000_000, base // {"div": 4, "cse": 3, "struct": 2}.get(kind, 1))
+    base = rng.choice([3, 5, 8, 12, 18]) * 1_000_000
+    floor = {"nested": 120_000, "recur": 10_000}.get(kind, 1_500_000)
+    return max(floor, base // _COST.get(kind, 1))
 
 
 def _comp_reps(kind: str, rng) -> int:
-    w = rng.choice([4, 8, 16, 30, 52]) * 100_000
-    if kind == "nested":
-        return max(60_000, w // 14)
-    if kind == "recur":
-        return max(6_000, w // 260)
-    return max(400_000, w // {"div": 4, "cse": 3, "struct": 2, "branch": 1}.get(kind, 1))
+    w = rng.choice([3, 6, 11, 20, 34]) * 100_000
+    floor = {"nested": 40_000, "recur": 4_000}.get(kind, 300_000)
+    return max(floor, w // _COST.get(kind, 1))
 
 
 def _emit_part(idx: int, kind: str, rng, use_for: bool) -> Tuple[str, str]:

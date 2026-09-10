@@ -17,14 +17,14 @@ int part0(int reps) {
 int part1(int reps) {
     int acc = 0;
     for (int i = 0; i < reps; i = i + 1) {
-        acc = acc + rec1(120);
+        acc = acc + rec1(60);
     }
     return acc;
 }
 
 int main() {
     int s = 0;
-    s = s + part0(400000);
-    s = s + part1(6000);
+    s = s + part0(300000);
+    s = s + part1(4000);
     return ((s % 251) + 251) % 251;
 }

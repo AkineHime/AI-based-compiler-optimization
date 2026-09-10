@@ -8,6 +8,6 @@ int part0(int reps) {
 }
 
 int main() {
-    int s = part0(11000000);
+    int s = part0(4000000);
     return ((s % 251) + 251) % 251;
 }

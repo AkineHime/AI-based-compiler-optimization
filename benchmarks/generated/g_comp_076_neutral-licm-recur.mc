@@ -24,15 +24,15 @@ int part1(int reps) {
 int part2(int reps) {
     int acc = 0;
     for (int i = 0; i < reps; i = i + 1) {
-        acc = acc + rec2(460);
+        acc = acc + rec2(240);
     }
     return acc;
 }
 
 int main() {
     int s = 0;
-    s = s + part0(5200000);
-    s = s + part1(1600000);
-    s = s + part2(6000);
+    s = s + part0(1133333);
+    s = s + part1(1100000);
+    s = s + part2(4000);
     return ((s % 251) + 251) % 251;
 }

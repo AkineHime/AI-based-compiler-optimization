@@ -7,7 +7,7 @@ int rec0(int n) {
 int part0(int reps) {
     int acc = 0;
     for (int i = 0; i < reps; i = i + 1) {
-        acc = acc + rec0(120);
+        acc = acc + rec0(60);
     }
     return acc;
 }
@@ -36,8 +36,8 @@ int part2(int reps) {
 
 int main() {
     int s = 0;
-    s = s + part0(6153);
-    s = s + part1(1600000);
-    s = s + part2(400000);
+    s = s + part0(4000);
+    s = s + part1(366666);
+    s = s + part2(300000);
     return ((s % 251) + 251) % 251;
 }

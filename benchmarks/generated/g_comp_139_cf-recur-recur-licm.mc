@@ -22,7 +22,7 @@ int part0(int reps) {
 int part1(int reps) {
     int acc = 0;
     for (int i = 0; i < reps; i = i + 1) {
-        acc = acc + rec1(460);
+        acc = acc + rec1(240);
     }
     return acc;
 }
@@ -30,7 +30,7 @@ int part1(int reps) {
 int part2(int reps) {
     int acc = 0;
     for (int i = 0; i < reps; i = i + 1) {
-        acc = acc + rec2(200);
+        acc = acc + rec2(100);
     }
     return acc;
 }
@@ -45,9 +45,9 @@ int part3(int reps) {
 
 int main() {
     int s = 0;
-    s = s + part0(400000);
-    s = s + part1(6153);
-    s = s + part2(11538);
-    s = s + part3(800000);
+    s = s + part0(300000);
+    s = s + part1(4000);
+    s = s + part2(4000);
+    s = s + part3(600000);
     return ((s % 251) + 251) % 251;
 }
