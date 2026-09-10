@@ -231,3 +231,223 @@ def _category_map(csv_path: str) -> Dict[str, str]:
         for row in _csv.DictReader(fh):
             out[row["program_id"]] = row.get("pattern") or row.get("category", "?")
     return out
+
+
+# --------------------------------------------------------------------------- #
+#  pick each model's best abstain margin, then rank models                     #
+# --------------------------------------------------------------------------- #
+REGRESS_CAP = 0.10
+
+
+def best_config(r: dict) -> dict:
+    """r is one compare() row.  Choose margin 0 or the best sweep entry that keeps
+    regressions <= REGRESS_CAP, maximising reco speedup."""
+    opts = [{"margin": 0.0, "reco_speedup_mean": r["reco_speedup_mean"],
+             "capture": r["capture"], "regression_rate": r["regression_rate"]}]
+    for m, sc in r.get("by_margin", {}).items():
+        opts.append({"margin": m, **{k: sc[k] for k in
+                     ("reco_speedup_mean", "capture", "regression_rate")}})
+    safe = [o for o in opts if o["regression_rate"] <= REGRESS_CAP] or opts
+    best = max(safe, key=lambda o: (round(o["reco_speedup_mean"], 3),
+                                    round(o["capture"], 3),
+                                    -o["regression_rate"]))
+    return best
+
+
+def rank(rows: List[dict]) -> List[dict]:
+    out = []
+    for r in rows:
+        bc = best_config(r)
+        out.append({**r, "best_margin": bc["margin"],
+                    "reco": bc["reco_speedup_mean"], "cap": bc["capture"],
+                    "regress": bc["regression_rate"]})
+    out.sort(key=lambda r: (-round(r["reco"], 3), -round(r["cap"], 3), r["regress"]))
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  deployment cost: model size + inference latency                            #
+# --------------------------------------------------------------------------- #
+def measure_deploy_cost(name: str, ds, seqs, seed: int = 0) -> dict:
+    import io
+    import pickle
+    pa = to_program_arrays(ds, seqs if MODEL_SPECS[name] in ("sequence", "hybrid") else None)
+    need_tokens = MODEL_SPECS[name] in ("sequence", "hybrid")
+    n_probe = min(24, len(pa["pids"]))
+
+    if name in TORCH_MODELS:
+        from .models_torch import TorchSpeedupModel
+        m = TorchSpeedupModel(name, seed=seed, n_static=pa["n_static"], epochs=6)
+        m.fit(pa["feats"], pa["tokens"] if need_tokens else None,
+              pa["speedup"], pa["mask"])
+        size_kb = m.state_size_kb()
+        t0 = time.perf_counter()
+        m.predict(pa["feats"][:n_probe], pa["tokens"][:n_probe] if need_tokens else None)
+        lat = (time.perf_counter() - t0) / n_probe * 1000
+    else:
+        X = np.asarray(ds.X, float)
+        y = np.asarray(ds.y, float)
+        groups = np.asarray(ds.groups)
+        reg = _sk_factory(name, seed)
+        reg.fit(X, y)
+        buf = io.BytesIO()
+        pickle.dump(reg, buf)
+        size_kb = len(buf.getvalue()) / 1024
+        probe_rows = np.concatenate(
+            [np.where(groups == pa["pids"][i])[0] for i in range(n_probe)])
+        t0 = time.perf_counter()
+        reg.predict(X[probe_rows])
+        lat = (time.perf_counter() - t0) / n_probe * 1000
+    return {"model_size_kb": round(size_kb, 1),
+            "predict_latency_ms": round(lat, 2)}
+
+
+# --------------------------------------------------------------------------- #
+#  markdown report                                                            #
+# --------------------------------------------------------------------------- #
+_PRETTY = {"linear": "Linear (Ridge)", "random_forest": "Random Forest",
+           "hist_gradient_boosting": "HistGradient Boosting", "mlp": "MLP",
+           "cnn1d": "1D-CNN", "gru": "GRU (RNN)",
+           "cnn1d_hybrid": "1D-CNN + features", "gru_hybrid": "GRU + features"}
+_TRACK = {"tabular": "features", "sequence": "TAC sequence", "hybrid": "both"}
+
+
+def render_markdown(ranked_rows: List[dict], deploy: Dict[str, dict],
+                    n_programs: int, n_combos: int = 64, seeds: int = 1) -> str:
+    L = ["# Model comparison — which model recommends the best passes\n"]
+    L.append(f"All {len(ranked_rows)} models predict `speedup_ratio` for a "
+             f"(program, pass-combo) pair and are scored **identically**: one "
+             f"shared 5-fold split over {n_programs} programs, ranked on the true "
+             f"speedup of the combo each model recommends, with the same "
+             f"abstain-margin sweep the production recommender uses.\n")
+    L.append(f"- Tabular models see the 27 static features + 6 pass bits.")
+    L.append(f"- Sequence models (CNN, GRU) see the tokenised combo-0 TAC + 6 pass bits.")
+    L.append(f"- Hybrids see both."
+             + (f"  Neural rows are the mean of {seeds} seeds." if seeds > 1 else "") + "\n")
+
+    L.append("## Results\n")
+    L.append("| # | model | input | reco speedup | oracle capture | regressions | "
+             "speedup MAE | size | train | infer |")
+    L.append("|--:|---|---|--:|--:|--:|--:|--:|--:|--:|")
+    for i, r in enumerate(ranked_rows, 1):
+        d = deploy.get(r["model"], {})
+        mae = "--" if r["cv_mae"] != r["cv_mae"] else f"{r['cv_mae']:.3f}"
+        L.append(
+            f"| {i} | **{_PRETTY.get(r['model'], r['model'])}** | "
+            f"{_TRACK[MODEL_SPECS[r['model']]]} | "
+            f"**x{r['reco']:.3f}** | {100*r['cap']:.0f}% | {100*r['regress']:.0f}% | "
+            f"{mae} | {_kb(d.get('model_size_kb'))} | "
+            f"{r['train_time_s']:.1f}s | {d.get('predict_latency_ms', '--')} ms |")
+    L.append("")
+    L.append(f"*reco speedup* = held-out true speedup of the recommended combo "
+             f"(at each model's best abstain margin). *capture* = fraction of the "
+             f"oracle-best gain recovered. *infer* = ms to score all {n_combos} "
+             f"combos for one program.\n")
+
+    win = ranked_rows[0]
+    L.append(f"**Winner: {_PRETTY.get(win['model'], win['model'])}** — "
+             f"reco x{win['reco']:.3f}, {100*win['cap']:.0f}% capture, "
+             f"{100*win['regress']:.0f}% regressions"
+             + (f", abstain margin x{1+win['best_margin']:.2f}" if win['best_margin'] else "")
+             + ".\n")
+
+    # per-category grid
+    cats = sorted({c for r in ranked_rows for c in r["per_category"]})
+    L.append("## Recommendation speedup by program type\n")
+    L.append("| model | " + " | ".join(cats) + " |")
+    L.append("|---|" + "|".join("--:" for _ in cats) + "|")
+    for r in ranked_rows:
+        cells = [f"x{r['per_category'].get(c, float('nan')):.2f}"
+                 if c in r["per_category"] else "--" for c in cats]
+        L.append(f"| {_PRETTY.get(r['model'], r['model'])} | " + " | ".join(cells) + " |")
+    ns = ranked_rows[0].get("per_category_n", {})
+    L.append("\n" + "  ".join(f"`{c}`: {ns.get(c, '?')}" for c in cats) + "  (held-out program counts)\n")
+
+    L.append("## Method notes\n")
+    L.append("- Same GroupKFold-by-program split for every model — a program's 64 "
+             "rows share features, so a random row split would leak.")
+    L.append("- Sequence models are trained program-batched (one encode per "
+             "program, all 64 combos scored together); on CPU the row-batched "
+             "version is ~50x slower.")
+    L.append("- The GRU is a compact 1-layer model capped at 320 tokens — a "
+             "bidirectional / multi-layer RNN on 640-token programs needs a GPU.")
+    L.append("- All models use identical inputs otherwise and the identical "
+             "abstain-margin recommendation rule.")
+    return "\n".join(L)
+
+
+def _kb(v):
+    if v is None:
+        return "--"
+    return f"{v/1024:.1f} MB" if v >= 1024 else f"{v:.0f} KB"
+
+
+# --------------------------------------------------------------------------- #
+#  orchestrator                                                               #
+# --------------------------------------------------------------------------- #
+def _mean_rows(runs: List[List[dict]]) -> List[dict]:
+    """Average matching-model rows across seeds (scalars only; keep run 0's dicts)."""
+    by_name = {}
+    for run in runs:
+        for r in run:
+            by_name.setdefault(r["model"], []).append(r)
+    out = []
+    for name, rs in by_name.items():
+        base = dict(rs[0])
+        for k in ("reco_speedup_mean", "capture", "regression_rate", "cv_mae",
+                  "oracle_speedup_mean", "train_time_s"):
+            base[k] = statistics.mean(r[k] for r in rs)
+        base["by_margin"] = {
+            m: {kk: statistics.mean(r["by_margin"][m][kk] for r in rs)
+                for kk in rs[0]["by_margin"][m]}
+            for m in rs[0].get("by_margin", {})}
+        base["seeds"] = len(rs)
+        out.append(base)
+    return out
+
+
+def run_full_comparison(csv_path: str = "data/benchmark_dataset.csv",
+                        seq_path: str = "data/tac_sequences.npz",
+                        out_md: str = "MODEL_COMPARISON.md",
+                        n_splits: int = 5, seeds: int = 1,
+                        models: List[str] = None, progress=print) -> dict:
+    from .dataset import load_dataset as _ld
+    from .sequences import load_sequences as _ls
+    models = models or list(MODEL_SPECS)
+    ds = _ld(csv_path)
+    seqs = _ls(seq_path)
+    n_programs = len(set(np.asarray(ds.groups)))
+
+    runs = []
+    for s in range(seeds):
+        progress(f"\n=== seed {s} ===")
+        runs.append(compare(csv_path, seq_path, models, n_splits, seed=s, progress=progress))
+    rows = _mean_rows(runs) if seeds > 1 else runs[0]
+
+    ranked = rank(rows)
+    progress("\nmeasuring model size / inference latency ...")
+    deploy = {name: measure_deploy_cost(name, ds, seqs, seed=0) for name in models}
+
+    md = render_markdown(ranked, deploy, n_programs, seeds=seeds)
+    with open(out_md, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(md)
+    progress(f"\nwrote {out_md}")
+    return {"ranked": ranked, "deploy": deploy, "winner": ranked[0]}
+
+
+def _main(argv=None):
+    import argparse
+    p = argparse.ArgumentParser(description="Compare recommendation models")
+    p.add_argument("--csv", default="data/benchmark_dataset.csv")
+    p.add_argument("--seq", default="data/tac_sequences.npz")
+    p.add_argument("--out", default="MODEL_COMPARISON.md")
+    p.add_argument("--splits", type=int, default=5)
+    p.add_argument("--seeds", type=int, default=1)
+    p.add_argument("--models", default="", help="comma list; default all 8")
+    a = p.parse_args(argv)
+    run_full_comparison(a.csv, a.seq, a.out, a.splits, a.seeds,
+                        [m.strip() for m in a.models.split(",")] if a.models else None)
+
+
+if __name__ == "__main__":
+    _main()
