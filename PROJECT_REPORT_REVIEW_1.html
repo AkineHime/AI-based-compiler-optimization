@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compiler Design Project Report - Review 1 (Assessment-6)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500;600&display=swap');
+
+  :root {
+    --primary: #1A365D;
+    --primary-light: #2B6CB0;
+    --accent: #2B6CB0;
+    --text: #1A202C;
+    --text-muted: #4A5568;
+    --bg: #FFFFFF;
+    --bg-alt: #F7FAFC;
+    --border: #CBD5E0;
+    --highlight: #EBF8FF;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--text);
+    background-color: #718096;
+    line-height: 1.35;
+    font-size: 11px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page-container {
+    width: 210mm;
+    margin: 20px auto;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 14mm 16mm;
+    background: white;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 4px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 8.5px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .footer {
+    border-top: 1px solid var(--border);
+    padding-top: 4px;
+    margin-top: auto;
+    display: flex;
+    justify-content: space-between;
+    font-size: 8.5px;
+    color: var(--text-muted);
+  }
+
+  .content {
+    flex: 1;
+  }
+
+  h1.title {
+    color: var(--primary);
+    font-size: 15px;
+    font-weight: 700;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+  }
+
+  h2.subtitle {
+    color: var(--primary-light);
+    font-size: 10.5px;
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 8px;
+  }
+
+  h3.section-title {
+    color: var(--primary);
+    font-size: 10.5px;
+    font-weight: 700;
+    border-left: 3px solid var(--primary-light);
+    padding-left: 6px;
+    margin-top: 7px;
+    margin-bottom: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+  }
+
+  h4.subsection-title {
+    color: var(--primary-light);
+    font-size: 9.5px;
+    font-weight: 600;
+    margin-top: 4px;
+    margin-bottom: 2px;
+  }
+
+  p {
+    margin-bottom: 4px;
+    text-align: justify;
+    font-size: 9px;
+  }
+
+  ul {
+    margin-left: 14px;
+    margin-bottom: 4px;
+    font-size: 8.8px;
+  }
+
+  li {
+    margin-bottom: 2px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 4px 0 6px 0;
+    font-size: 8.5px;
+  }
+
+  th, td {
+    padding: 3.5px 6px;
+    border: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    background-color: var(--primary);
+    color: white;
+    font-weight: 600;
+    font-size: 8.5px;
+  }
+
+  tr:nth-child(even) td {
+    background-color: var(--bg-alt);
+  }
+
+  .highlight-row td {
+    background-color: var(--highlight) !important;
+    font-weight: 600;
+  }
+
+  .code-font {
+    font-family: 'Fira Code', monospace;
+    font-size: 8.2px;
+    background-color: #EDF2F7;
+    padding: 1px 3px;
+    border-radius: 3px;
+  }
+
+  .pipeline-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 5px;
+    margin: 4px 0 6px 0;
+  }
+
+  .pipeline-box {
+    background: #EDF2F7;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 6px;
+  }
+
+  .pipeline-box-title {
+    font-weight: 700;
+    font-size: 8.8px;
+    color: var(--primary);
+    margin-bottom: 2px;
+  }
+
+  .pipeline-box-desc {
+    font-size: 8px;
+    color: var(--text);
+  }
+
+  .img-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin: 4px 0 3px 0;
+  }
+
+  .img-card {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    background: #FAFAFA;
+  }
+
+  .img-card img {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  .img-caption {
+    font-size: 7.8px;
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 2px 4px;
+    text-align: center;
+    background: #FFFFFF;
+    border-top: 1px solid var(--border);
+  }
+
+  .stat-badge {
+    display: inline-block;
+    background: var(--highlight);
+    border: 1px solid #BEE3F8;
+    color: #2B6CB0;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-weight: 600;
+    font-size: 8px;
+  }
+
+  @media print {
+    body {
+      background: none;
+    }
+    .page-container {
+      width: 100%;
+      margin: 0;
+    }
+    .page {
+      width: 100%;
+      min-height: 100vh;
+      margin: 0;
+      padding: 12mm 14mm;
+      box-shadow: none;
+      page-break-after: always;
+      page-break-inside: avoid;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="page-container">
+
+  <!-- ================= PAGE 1 ================= -->
+  <div class="page">
+    <div class="header">
+      <span>Vellore Institute of Technology | School of Computer Science & Engineering</span>
+      <span>CSE3005 - Compiler Design | Review-1 (Assessment-6)</span>
+    </div>
+
+    <div class="content">
+      <h1 class="title">AI-Based Compiler Optimization for MiniC</h1>
+      <h2 class="subtitle">Phase Ordering & Static-Feature-Driven Pass Selection Using Machine Learning | Review-1 Report</h2>
+
+      <!-- Team Members Table -->
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 6%;">S.No</th>
+            <th style="width: 22%;">Student Name</th>
+            <th style="width: 18%;">Reg. Number</th>
+            <th style="width: 54%;">Project Role & Core Contribution Areas</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="text-align:center;">1</td>
+            <td><b>Student 1 (Lead)</b></td>
+            <td>22BCE0001</td>
+            <td><b>Person A:</b> Front-End (Lexer, BNF Parser, AST, Semantic Analyzer), TAC IR Lowering, Dominator Trees & 19 Static Features.</td>
+          </tr>
+          <tr>
+            <td style="text-align:center;">2</td>
+            <td><b>Student 2</b></td>
+            <td>22BCE0002</td>
+            <td><b>Person B:</b> 6 Optimization Passes (CF, DCE, CSE, LICM, SR, LU), 64-Combo Pass Controller, Fixed-Point Loop & Value-Semantics Codegen.</td>
+          </tr>
+          <tr>
+            <td style="text-align:center;">3</td>
+            <td><b>Student 3</b></td>
+            <td>22BCE0003</td>
+            <td><b>Person C:</b> Timing Harness (gcc -O0 least-of-15), 17,280-Run Dataset, Risk-Aware HistGBT Recommender & Interactive Web Playground.</td>
+          </tr>
+          <tr>
+            <td style="text-align:center;">4</td>
+            <td><b>Student 4</b></td>
+            <td>22BCE0004</td>
+            <td><b>Person D:</b> 270 Benchmark Programs Corpus (30 Handcrafted + 240 Parametric), Ground Truth Verification Oracle & Performance Analysis.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- 1. Abstract & Motivation -->
+      <h3 class="section-title">1. Abstract & Problem Motivation</h3>
+      <p>
+        Modern optimizing compilers (e.g., GCC, LLVM) employ predefined, monolithic optimization levels such as <span class="code-font">-O2</span> or <span class="code-font">-O3</span> that blindly apply fixed pass pipelines across all programs. However, compiler optimizations interact non-linearly: an earlier pass often eliminates structural preconditions for downstream transformations (the <i>Phase-Ordering Problem</i>), and indiscriminately enabling aggressive passes causes substantial performance regressions due to instruction cache thrashing, register spilling, and loop unroll overhead. In our empirical sweep of 270 benchmark programs across all 64 pass combinations, turning all 6 passes on regressed performance on over <b>243 out of 270 programs</b> compared to the optimal per-program combination.
+      </p>
+      <p>
+        To solve this, we develop an end-to-end optimizing compiler and machine learning recommendation engine for <b>MiniC</b>—a strongly typed, pointer-free C dialect designed for provably sound transformations. By extracting a 27-dimensional static feature vector from Three-Address Code (TAC) intermediate representation, our risk-aware machine learning model predicts the optimal combination out of 64 pass subsets, achieving a geomean speedup of <b>&times;1.23</b> on unseen held-out programs (capturing <b>44% of achievable oracle speedup</b>) while keeping compiler regressions strictly under 9%.
+      </p>
+
+      <!-- 2. System Architecture -->
+      <h3 class="section-title">2. System Architecture & Compiler Pipeline</h3>
+      <p>
+        The system decouples feature analysis, transformation synthesis, and execution timing into a robust 5-stage architecture:
+      </p>
+
+      <div class="pipeline-grid">
+        <div class="pipeline-box">
+          <div class="pipeline-box-title">Stage 1: Front-End Parser</div>
+          <div class="pipeline-box-desc">MiniC Source (<span class="code-font">.mc</span>) &rarr; Lexer &rarr; BNF Parser &rarr; AST &rarr; Semantic Type & Struct Analysis.</div>
+        </div>
+        <div class="pipeline-box">
+          <div class="pipeline-box-title">Stage 2: TAC IR & Features</div>
+          <div class="pipeline-box-desc">AST &rarr; Three-Address Code (TAC) &rarr; CFG & Dominator Trees &rarr; 27 Static Feature Vector Extractor.</div>
+        </div>
+        <div class="pipeline-box">
+          <div class="pipeline-box-title">Stage 3: ML Recommender</div>
+          <div class="pipeline-box-desc">27 Static Features &rarr; HistGBT Regressor &rarr; Risk-Aware Abstain Policy &rarr; Recommended Combo (0..63).</div>
+        </div>
+        <div class="pipeline-box">
+          <div class="pipeline-box-title">Stage 4: Optimization Engine</div>
+          <div class="pipeline-box-desc">6 Passes (CF, DCE, CSE, LICM, SR, LU) &rarr; Canonical Order &rarr; Iterative Fixed-Point Convergence.</div>
+        </div>
+        <div class="pipeline-box">
+          <div class="pipeline-box-title">Stage 5: Codegen & Timing</div>
+          <div class="pipeline-box-desc">Optimized TAC &rarr; Value-Semantics ANSI C &rarr; Compiled with <span class="code-font">gcc -O0</span> &rarr; Timed (Least of 15 Runs).</div>
+        </div>
+        <div class="pipeline-box">
+          <div class="pipeline-box-title">Validation Gate</div>
+          <div class="pipeline-box-desc">Exit code and return value equivalence verified across all 64 configurations against baseline.</div>
+        </div>
+      </div>
+
+      <!-- 3. MiniC Language Specification -->
+      <h3 class="section-title">3. MiniC Language Specification & Front-End Design</h3>
+      <p>
+        <b>MiniC Design Rationale:</b> Conventional C optimization is constrained by pointer aliasing ambiguities. MiniC omits pointers and dynamic memory allocation (<span class="code-font">malloc/free</span>), enforcing <i>strict value semantics</i> for multi-dimensional arrays, fixed strings, and nominal structs. This structural guarantee ensures <b>complete alias freedom</b>—every named identifier maps to an isolated memory cell. Transformations like Common Subexpression Elimination and Loop-Invariant Code Motion are provably sound without requiring conservative points-to analysis.
+      </p>
+      <p>
+        <b>Front-End Pipeline:</b> Implemented in <span class="code-font">src/minic/frontend/</span>, the front-end tokenizes input using regex lexing and parses via recursive descent following strict BNF grammar rules. Semantic analysis enforces nominal type resolution and array dimensionality. The AST is lowered into Three-Address Code (TAC) in <span class="code-font">src/minic/ir/</span>, structured into basic blocks with full Control Flow Graph (CFG) edges, dominator trees, and natural loop boundaries.
+      </p>
+    </div>
+
+    <div class="footer">
+      <span>Project: AI-Based Compiler Optimization for MiniC (Review-1 / Assessment-6)</span>
+      <span>Page 1 of 3</span>
+    </div>
+  </div>
+
+  <!-- ================= PAGE 2 ================= -->
+  <div class="page">
+    <div class="header">
+      <span>Vellore Institute of Technology | School of Computer Science & Engineering</span>
+      <span>CSE3005 - Compiler Design | Review-1 (Assessment-6)</span>
+    </div>
+
+    <div class="content">
+      <!-- 4. Optimization Passes -->
+      <h3 class="section-title">4. Modular Optimization Passes & Value-Semantics Codegen</h3>
+      <p>
+        The optimization engine (<span class="code-font">src/minic/optimizer/</span>) implements 6 independently toggleable passes controlled via a 6-bit configuration bitmask ($2^6 = 64$ combinations). Passes run in canonical order (<span class="code-font">CF &rarr; CSE &rarr; LU &rarr; LICM &rarr; SR &rarr; DCE</span>) iterated to a <b>fixed point</b> (until no further instruction rewrites occur):
+      </p>
+
+      <ul>
+        <li><b>Constant Folding & Propagation (CF, Bit 0):</b> Evaluates constant arithmetic/relational subtrees at compile time (e.g. <span class="code-font">3 * 5 &rarr; 15</span>), eliminates dead branches (<span class="code-font">ifFalse 1 goto L</span>), and propagates known constants across basic block boundaries.</li>
+        <li><b>Common Subexpression Elimination (CSE, Bit 1):</b> Applies local value numbering across basic blocks to identify duplicate expressions with identical operand values, reusing existing temporaries.</li>
+        <li><b>Loop Unrolling (LU, Bit 2):</b> Detects canonical <span class="code-font">while</span> loops with bounded trip counts, unrolling loop bodies by a factor of 2 or 4 to diminish branch penalties and expose instruction parallelism.</li>
+        <li><b>Loop-Invariant Code Motion (LICM, Bit 3):</b> Uses dominator trees and natural loop detection to identify instructions whose operands are invariant across loop iterations, hoisting them to loop pre-headers.</li>
+        <li><b>Strength Reduction (SR, Bit 4):</b> Replaces computationally expensive operations inside loops (e.g., induction variable multiplications <span class="code-font">i * 8</span>) with low-latency additions (<span class="code-font">t = t + 8</span>).</li>
+        <li><b>Dead Code Elimination (DCE, Bit 5):</b> Uses backward liveness analysis to eliminate unused assignments and temporaries that lack downward-exposed uses.</li>
+        <li><b>Value-Semantics Codegen (<span class="code-font">src/minic/codegen/</span>):</b> Emits ANSI C code. Arrays and strings are wrapped in single-field structs (<span class="code-font">typedef struct { int data[10]; } arr_10;</span>), guaranteeing pass-by-value and assignment copy semantics without pointer decay.</li>
+      </ul>
+
+      <!-- 5. Static Features & ML Recommender -->
+      <h3 class="section-title">5. Static Feature Extraction & Machine Learning Recommender</h3>
+      <p>
+        To recommend the optimal pass configuration without executing or timing the target program, the compiler extracts a <b>27-dimensional static feature vector</b> directly from the TAC IR and CFG:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 25%;">Feature Category</th>
+            <th style="width: 10%;">Dimensions</th>
+            <th style="width: 65%;">Extracted Compiler Metrics & Significance</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Structural Metrics</b><br/>(<span class="code-font">src/minic/features/</span>)</td>
+            <td style="text-align:center;">19</td>
+            <td>Total TAC instructions, basic block count, loop count, max loop nesting depth, branch count, branch density, instruction histograms (arithmetic, multiplication, load, store, call, branch), named vs temp variables, array and struct access counts.</td>
+          </tr>
+          <tr>
+            <td><b>Opportunity Metrics</b><br/>(<span class="code-font">src/minic/features/opportunity.py</span>)</td>
+            <td style="text-align:center;">8</td>
+            <td>Foldable constant expression count, loop-invariant candidate count, common subexpression candidate count, reducible induction multiplication count, unrollable loop count, dead store candidate ratio.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h4 class="subsection-title">Risk-Aware Recommender Formulation & Abstain-Margin Policy:</h4>
+      <p>
+        Standard regression models that select the pass combo with the highest predicted speedup (<span class="code-font">argmax</span>) suffer from high regression rates (21% of unseen programs execute slower than unoptimized code due to noisy predictions). We formulated a <b>Risk-Aware Abstain-Margin Policy</b>:
+      </p>
+      <p style="background: #EDF2F7; padding: 4px 8px; border-left: 3px solid var(--primary); font-family: 'Fira Code', monospace; font-size: 8.5px;">
+        Policy: If max<sub>c &isin; [1..63]</sub> S(p, c) &ge; &theta; (where &theta; = 1.12&times;), select c* = argmax S(p, c); else Abstain &rarr; Combo 0 (Baseline).
+      </p>
+      <p>
+        Here, $S(p, c)$ represents the predicted speedup of program $p$ under pass combination $c$, generated by a <b>Histogram Gradient Boosted Tree (HistGBT)</b> regressor. If the expected speedup does not exceed the margin $\theta = 1.12\times$, the compiler safely falls back to Combo 0 (no optimization). This strategy cuts regressions to <b>9%</b> while retaining <b>44% of achievable oracle speedup</b>.
+      </p>
+      <p>
+        <b>GroupKFold Cross-Validation:</b> Cross-validation splits are partitioned strictly by <span class="code-font">program_id</span> across 5 folds. Because all 64 configurations of a program share identical static features, standard random splits would cause catastrophic feature leakage. GroupKFold ensures rigorous evaluation on unseen code structures.
+      </p>
+
+      <!-- 6. Experimental Sweep Methodology -->
+      <h3 class="section-title">6. Empirical Benchmark Sweep & Timing Methodology</h3>
+      <p>
+        A comprehensive corpus of <b>270 benchmark programs</b> was constructed (30 handcrafted algorithms spanning 2D arrays, structs, strings, recursion, numeric loops + 240 parametric synthetic benchmarks). Each program was emitted to C across all 64 pass combinations = <b>17,280 compiled configurations</b>. 
+        Programs were compiled with <span class="code-font">gcc -O0</span> (isolating MiniC's optimizer contribution from C compiler passes) and executed 15 times using high-precision wall-clock timing (<span class="code-font">time.perf_counter()</span>), recording the minimum-interference execution time after 4 warmup runs. Every build verified exit-code equivalence against baseline.
+      </p>
+    </div>
+
+    <div class="footer">
+      <span>Project: AI-Based Compiler Optimization for MiniC (Review-1 / Assessment-6)</span>
+      <span>Page 2 of 3</span>
+    </div>
+  </div>
+
+  <!-- ================= PAGE 3 ================= -->
+  <div class="page">
+    <div class="header">
+      <span>Vellore Institute of Technology | School of Computer Science & Engineering</span>
+      <span>CSE3005 - Compiler Design | Review-1 (Assessment-6)</span>
+    </div>
+
+    <div class="content">
+      <!-- 7. Implementation Screenshots -->
+      <h3 class="section-title">7. Implementation Screenshots & Execution Verification (Review-1 Demonstration)</h3>
+      <p>
+        The complete compiler optimization pipeline and ML recommender are integrated into an interactive web playground (<span class="code-font">demo/app.py</span>). Below are execution runs on representative benchmarks demonstrating correctness and measured speedup:
+      </p>
+
+      <div class="img-grid">
+        <div class="img-card">
+          <img src="output-images/run1/image_370.png" alt="Run 1 TAC Diff">
+          <div class="img-caption">Fig 1(a): Run 1 TAC Diff (Combo 0 vs Combo 63) for <i>Struct Distance</i> workload.</div>
+        </div>
+        <div class="img-card">
+          <img src="output-images/run1/image_372.png" alt="Run 1 Speedup">
+          <div class="img-caption">Fig 1(b): Run 1 Performance: <b>&times;2.52 Speedup</b> (190.57 ms &rarr; 75.49 ms; beating gcc -O2).</div>
+        </div>
+        <div class="img-card">
+          <img src="output-images/run2/image_373.png" alt="Run 2 TAC Diff">
+          <div class="img-caption">Fig 2(a): Run 2 TAC Diff for <i>Loop-Invariant Math</i> (Loop Unrolling & LICM hoists).</div>
+        </div>
+        <div class="img-card">
+          <img src="output-images/run2/image_375.png" alt="Run 2 Speedup">
+          <div class="img-caption">Fig 2(b): Run 2 Performance: <b>&times;1.93 Speedup</b> (200.64 ms &rarr; 104.10 ms).</div>
+        </div>
+      </div>
+
+      <!-- 8. Key Results Table -->
+      <h3 class="section-title">8. Key Experimental Results & Comparative Performance Analysis</h3>
+      
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 32%;">Optimization Strategy</th>
+            <th style="width: 17%;">Geomean Speedup</th>
+            <th style="width: 13%;">Max Speedup</th>
+            <th style="width: 20%;">Regression Rate (&gt;2% Slower)</th>
+            <th style="width: 18%;">Captured Oracle Gain</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Baseline (Combo 0 — No Passes)</td>
+            <td>&times;1.00</td>
+            <td>&times;1.00</td>
+            <td>0.0% (Reference)</td>
+            <td>0.0%</td>
+          </tr>
+          <tr>
+            <td>Default All-On (Combo 63 — Monolithic)</td>
+            <td>&times;1.21</td>
+            <td>&times;4.57</td>
+            <td>18.5% (Unsafe on 243/270)</td>
+            <td>38.9%</td>
+          </tr>
+          <tr class="highlight-row">
+            <td><b>ML Recommender (HistGBT + Abstain)</b></td>
+            <td><b>&times;1.23 (Held-Out)</b></td>
+            <td><b>&times;4.57</b></td>
+            <td><b>9.0% (Risk Controlled)</b></td>
+            <td><b>44.0% of Achievable Gain</b></td>
+          </tr>
+          <tr>
+            <td>Theoretical Oracle (Best Combo per Program)</td>
+            <td>&times;1.50 (Geomean)</td>
+            <td>&times;4.57</td>
+            <td>0.0% (Optimal Selection)</td>
+            <td>100.0% (Upper Bound)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p style="font-size: 8.5px; margin-top: 2px;">
+        <b>Category Speedup Highlights:</b> Struct Operations: <b>&times;3.08</b> &bull; Nested Loops: <b>&times;1.81</b> &bull; Fixed-Length Strings: <b>&times;1.57</b> &bull; Numeric Algorithms: <b>&times;1.37</b> &bull; Recursion: <b>&times;1.24</b>.
+      </p>
+
+      <!-- 9. Conclusion & Review-2 Milestones -->
+      <h3 class="section-title">9. Review-1 Completion Summary & Review-2 Milestones</h3>
+      <p>
+        <b>Review-1 Accomplishments:</b> (1) Implemented complete MiniC front-end lexer, recursive-descent parser, semantic validator, and TAC IR generator; (2) Built 6 standalone optimization passes and 64-combo fixed-point pass controller; (3) Executed 17,280-run benchmark sweep across 270 workloads; (4) Trained HistGBT ML recommender with risk-aware abstain policy under GroupKFold CV; (5) Deployed full interactive web playground.
+      </p>
+      <p>
+        <b>Review-2 Future Milestones:</b> (1) Integrate dynamic hardware performance counter features (L1/L2 cache misses, branch mispredictions); (2) Explore Deep Reinforcement Learning (PPO/DQN) for dynamic sequence ordering beyond fixed subsets; (3) Implement inter-procedural optimization (IPO) and function inlining; (4) Extend codegen to direct LLVM IR emission.
+      </p>
+    </div>
+
+    <div class="footer">
+      <span>Project: AI-Based Compiler Optimization for MiniC (Review-1 / Assessment-6)</span>
+      <span>Page 3 of 3</span>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
