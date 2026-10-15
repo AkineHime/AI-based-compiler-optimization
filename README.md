@@ -9,16 +9,17 @@ combinations, compiled with `gcc -O0`, and timed on real binaries.
 
 ## Result
 
-On 270 benchmarks (30 hand-written + ~240 parametric), each swept over all 64 pass
-combinations = **17,280 timed configurations**:
+On 900 benchmarks (30 hand-written + 870 parametric), each swept over all 64 pass
+combinations = **57,600 timed configurations**:
 
 | | |
 |---|---|
-| Best pass combo per program, geomean speedup | **×1.50** (max ×4.57) |
-| Turning all 6 passes on | ×1.21 — and *not* the per-program best on 243 / 270 |
+| Best pass combo per program, geomean speedup | **×1.31** (max ×4.37) |
+| Turning all 6 passes on | ×1.19 — and *not* the per-program best on 715 / 900 |
 | No fixed non-empty combo is safe | every one regresses >3% on at least one program |
-| Recommender (HistGBT + abstain margin), held-out true speedup | **×1.23** vs ×1.54 oracle — 44% of the achievable gain |
-| Recommendations that regress the program | **9%** (down from 21% for naive argmax) |
+| Recommender (Random Forest + abstain margin), held-out true speedup | **×1.21** vs ×1.33 oracle — 63% of the achievable gain |
+| Recommendations that regress the program | **9%** (down from 12% for naive argmax) |
+| 8-model bake-off (Linear / RF / HGBT / MLP / 1D-CNN / GRU + hybrids) | HistGBT best at ×1.209 (≤10% regressions); 1D-CNN on raw TAC close behind at ×1.197 |
 
 The C compiler is pinned at `-O0` on purpose: the measured delta is what *our*
 optimizer contributed, not what `gcc` would have done anyway. `gcc -O2` is shown
@@ -42,8 +43,9 @@ python -m demo.cli recommend benchmarks/loops/licm_arith.mc --verify
 python -m demo.app            # http://127.0.0.1:5005
 
 # run the whole experiment (sweep -> dataset -> model bake-off -> RESULTS.md)
-python run_experiment.py                 # ~75 min full sweep
-python run_experiment.py --skip-sweep    # ~2 min: re-bake / retrain from the CSV
+python run_experiment.py                 # ~3.5 h full sweep (900 programs, 8 workers)
+python run_experiment.py --skip-sweep    # ~3 min: re-bake / retrain from the CSV
+python run_experiment.py --skip-sweep --compare-models   # + 8-model bake-off -> MODEL_COMPARISON.md (~25 min)
 ```
 
 Requirements: Python 3.9+ for the compiler itself; `numpy` / `scikit-learn` /
@@ -90,11 +92,12 @@ demo/
   app.py              Flask browser playground (port 5005)
   cli.py              minic-opt recommend | benchmark
 benchmarks/           30 hand-written programs (5 categories) + ground_truth.csv
-  generated/          ~240 parametric programs (gitignored; regenerate with --seed 7)
+  generated/          870 parametric programs (committed; _manifest.csv maps each to its pattern)
 tests/                pytest — front end, IR, every pass × 64 combos, harness, ML
 data/                 benchmark_dataset.csv (tracked); trained_model.pkl (gitignored)
 run_experiment.py     one command: sweep → dataset → bake-off → train → RESULTS.md
 RESULTS.md            current measured results
+MODEL_COMPARISON.md   8-model bake-off (tabular / sequence / hybrid)
 docs/
   results.html        the visual results report
   WALKTHROUGH.md      one program traced through every stage (lexer → … → ML)

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### 900-program results + model comparison
+- Corpus expanded to 900 programs (30 hand-written + 870 generated, now committed,
+  with branch / nested-loop / linear-recursion patterns); full 64-combo sweep =
+  57,600 timed configs (~3.3 h, 8 workers, zero miscompiles).
+- New headline: best combo per program geomean **x1.31** (max x4.37); all-on x1.19,
+  not the per-program best on 715 / 900.
+- Recommender re-selected by the strategy bake-off: **Random Forest + abstain margin
+  x1.05** -> x1.21 held-out vs x1.33 oracle, **63% capture**, 9% regressions
+  (naive argmax: 12%). HistGBT within 0.01x.
+- `MODEL_COMPARISON.md`: 8 models on one shared GroupKFold split, each at its best
+  abstain margin under a 10% regression cap. HistGBT wins (x1.209, 2 MB); RF x1.206
+  (613 MB); 1D-CNN on raw TAC x1.197; Ridge x1.186. Unconstrained, the GRU reaches
+  x1.222 but regresses 12%, and collapses to x1.035 once capped.
+- `RESULTS.md`, `docs/results.html` and `README.md` regenerated / updated for the
+  900-program numbers.
+
 ### Optimizer
 - **Loop unrolling** added as pass 6 (factor 4, remainder loop); 6 passes -> 64 combos.
 - Pass manager now iterates the canonical sequence (CF -> CSE -> LU -> LICM -> SR -> DCE)

@@ -369,226 +369,226 @@
 
 <script>
 const RESULTS = {
-  "n_programs": 270,
+  "n_programs": 900,
   "n_combos": 64,
-  "geomean_best": 1.495,
-  "geomean_all_on": 1.211,
-  "max_speedup": 4.57,
-  "max_program": "distance_accum",
-  "n_all_on_suboptimal": 243,
+  "geomean_best": 1.305,
+  "geomean_all_on": 1.19,
+  "max_speedup": 4.37,
+  "max_program": "complex_arith",
+  "n_all_on_suboptimal": 715,
   "safe_combo": 0,
   "safe_geomean": 1.0,
   "safe_worst": 1.0,
   "best_fixed_combo": 63,
-  "best_fixed_geomean": 1.21,
+  "best_fixed_geomean": 1.19,
   "cv": {
-    "kind": "hist_gradient_boosting",
-    "strategy": "margin:0.12",
-    "margin": 0.12,
-    "argmax_reco": 1.26,
-    "argmax_regress": 21,
-    "held_out": 270,
-    "n_groups": 270,
+    "kind": "random_forest",
+    "strategy": "margin:0.05",
+    "margin": 0.05,
+    "argmax_reco": 1.21,
+    "argmax_regress": 12,
+    "held_out": 900,
+    "n_groups": 900,
     "folds": 5,
-    "mae": 0.161,
-    "reco": 1.23,
-    "oracle": 1.54,
+    "mae": 0.105,
+    "reco": 1.21,
+    "oracle": 1.33,
     "baseline": 1.0,
-    "capture": 44,
+    "capture": 63,
     "regression_rate": 9
   },
   "data": [
     [
-      "distance_accum",
-      "structs",
-      4.57,
-      4.57,
-      63
-    ],
-    [
       "complex_arith",
       "structs",
-      4.39,
-      4.39,
-      63
-    ],
-    [
-      "bbox",
-      "structs",
-      3.22,
-      3.22,
-      63
-    ],
-    [
-      "cse_subexpr",
-      "loops",
-      2.61,
-      2.15,
-      6
+      4.37,
+      4.15,
+      62
     ],
     [
       "licm_div",
       "loops",
-      2.59,
-      2.37,
-      55
+      4.04,
+      3.94,
+      47
+    ],
+    [
+      "distance_accum",
+      "structs",
+      3.34,
+      3.33,
+      62
+    ],
+    [
+      "bbox",
+      "structs",
+      3.27,
+      3.27,
+      63
     ],
     [
       "const_fold",
       "loops",
-      2.51,
+      2.43,
+      2.31,
+      39
+    ],
+    [
+      "g_nested_339",
+      "generated",
+      2.39,
+      2.39,
+      63
+    ],
+    [
+      "g_nested_229",
+      "generated",
+      2.37,
+      2.37,
+      63
+    ],
+    [
+      "g_recur_241",
+      "generated",
+      2.37,
+      2.08,
+      50
+    ],
+    [
+      "g_nested_009",
+      "generated",
+      2.36,
+      2.36,
+      63
+    ],
+    [
+      "g_nested_163",
+      "generated",
+      2.35,
+      2.33,
+      46
+    ],
+    [
+      "g_recur_153",
+      "generated",
+      2.34,
+      0.95,
+      40
+    ],
+    [
+      "g_div_015",
+      "generated",
       2.3,
-      55
+      2.16,
+      15
+    ],
+    [
+      "cse_subexpr",
+      "loops",
+      2.27,
+      2.04,
+      46
     ],
     [
       "cse_mod",
       "loops",
-      2.37,
-      1.94,
-      54
+      2.19,
+      2.0,
+      46
     ],
     [
-      "const_prop",
-      "loops",
-      2.36,
-      1.84,
-      39
-    ],
-    [
-      "g_div_004",
+      "g_div_202",
       "generated",
-      2.31,
-      1.96,
+      2.19,
+      2.01,
       51
     ],
     [
-      "g_cse_025",
+      "g_div_246",
       "generated",
-      2.26,
-      1.7,
+      2.18,
+      2.03,
+      30
+    ],
+    [
+      "g_div_301",
+      "generated",
+      2.15,
+      2.14,
       55
     ],
     [
-      "g_cse_057",
-      "generated",
-      2.21,
-      1.52,
-      46
-    ],
-    [
-      "g_cse_017",
+      "g_nested_152",
       "generated",
       2.14,
-      1.52,
-      54
+      2.14,
+      63
     ],
     [
-      "g_licm_080",
+      "g_nested_185",
       "generated",
-      2.1,
-      1.49,
-      43
+      2.13,
+      2.13,
+      63
     ],
     [
-      "g_cf_091",
+      "g_div_224",
       "generated",
-      2.06,
-      1.6,
-      59
-    ],
-    [
-      "g_comp_085_div-div-licm",
-      "generated",
-      2.06,
-      1.29,
-      3
-    ],
-    [
-      "g_cse_081",
-      "generated",
-      2.06,
-      1.8,
-      6
-    ],
-    [
-      "g_comp_080_neutral-licm",
-      "generated",
-      2.04,
-      1.45,
-      47
-    ],
-    [
-      "g_div_012",
-      "generated",
-      2.03,
-      1.64,
-      12
-    ],
-    [
-      "g_comp_128_licm-cf",
-      "generated",
-      2.03,
-      1.44,
-      29
-    ],
-    [
-      "g_comp_094_cf-cse",
-      "generated",
-      2.02,
-      1.3,
+      2.12,
+      1.76,
       15
     ],
     [
-      "g_licm_024",
+      "g_cse_199",
       "generated",
-      2.01,
-      1.36,
-      35
+      2.1,
+      1.83,
+      55
     ],
     [
-      "polynomial",
-      "loops",
-      2.01,
-      1.85,
-      38
+      "g_div_323",
+      "generated",
+      2.1,
+      1.89,
+      46
     ],
     [
-      "g_licm_032",
+      "g_nested_240",
       "generated",
-      2.01,
-      1.22,
-      11
+      2.09,
+      2.09,
+      63
     ],
     [
-      "g_cse_049",
+      "g_div_092",
       "generated",
-      2.01,
-      1.75,
+      2.09,
+      2.07,
       23
     ],
     [
-      "g_licm_008",
+      "g_comp_173_div-cse-cse-recur",
       "generated",
-      1.99,
-      1.38,
-      19
+      2.08,
+      1.8,
+      62
     ],
     [
-      "g_comp_078_cse-licm-unroll-unroll",
+      "g_div_180",
       "generated",
-      1.99,
-      1.29,
-      46
+      2.07,
+      1.95,
+      30
     ]
   ],
   "hist": [
-    6,
-    8,
-    33,
-    38,
-    94,
-    67,
-    24
+    73,
+    90,
+    190,
+    236,
+    184,
+    98,
+    29
   ],
   "hist_labels": [
     "1.0-1.05",
@@ -602,37 +602,37 @@ const RESULTS = {
   "cats": [
     [
       "structs",
-      3.08
+      2.7
     ],
     [
       "loops",
-      1.81
-    ],
-    [
-      "strings",
-      1.57
-    ],
-    [
-      "generated",
-      1.47
+      1.75
     ],
     [
       "numeric",
-      1.37
+      1.36
+    ],
+    [
+      "strings",
+      1.35
+    ],
+    [
+      "generated",
+      1.29
     ],
     [
       "recursion",
-      1.24
+      1.13
     ]
   ],
   "top_features": [
-    "opp_const_foldable",
+    "multiplication_count",
     "opp_est_dyn_kilo_insts",
-    "total_instructions",
+    "opp_const_foldable",
     "branch_density",
-    "basic_block_count",
+    "opp_loop_body_insts",
     "instruction_density_in_loops",
-    "multiplication_count"
+    "temp_variable_count"
   ]
 };
 
