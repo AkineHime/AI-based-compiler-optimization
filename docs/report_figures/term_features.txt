@@ -1,0 +1,31 @@
+﻿=== Extracted Features (19 structural + 8 opportunity) ===
+{
+  "total_instructions": 20.0,
+  "basic_block_count": 4.0,
+  "loop_count": 1.0,
+  "max_loop_depth": 1.0,
+  "branch_count": 1.0,
+  "branch_density": 0.05,
+  "arithmetic_ops_count": 6.0,
+  "multiplication_count": 2.0,
+  "constant_load_count": 6.0,
+  "array_access_count": 0.0,
+  "array_2d_access_count": 0.0,
+  "struct_access_count": 0.0,
+  "function_call_count": 0.0,
+  "recursive_call_count": 0.0,
+  "named_variable_count": 3.0,
+  "temp_variable_count": 7.0,
+  "string_ops_count": 0.0,
+  "instruction_density_in_loops": 0.55,
+  "cyclomatic_complexity": 2.0,
+  "opp_const_foldable": 0.0,
+  "opp_cse_redundant": 1.0,
+  "opp_licm_hoistable": 0.0,
+  "opp_sr_reducible": 0.0,
+  "opp_unrollable_loops": 0.0,
+  "opp_loop_body_insts": 11.0,
+  "opp_hot_invariant_frac": 0.0,
+  "opp_est_dyn_kilo_insts": 11.0
+}
+

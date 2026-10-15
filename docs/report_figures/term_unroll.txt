@@ -1,0 +1,57 @@
+﻿=== Applying Optimization Combo 32 (Loop Unrolling (LU)) ===
+=== Three-Address Code (TAC) ===
+func main() -> int:
+    alloc scale : int
+    scale = 8
+    alloc total : int
+    total = 0
+    alloc i : int
+    i = 0
+L_unroll_main_1:
+    t7 = i < 997
+    ifFalse t7 goto L_while_start0
+    t10 = i * scale
+    t11 = total + t10
+    t8 = i * scale
+    t9 = t11 + t8
+    total = t9
+    t12 = i + 1
+    i = t12
+    t15 = i * scale
+    t16 = total + t15
+    t13 = i * scale
+    t14 = t16 + t13
+    total = t14
+    t17 = i + 1
+    i = t17
+    t20 = i * scale
+    t21 = total + t20
+    t18 = i * scale
+    t19 = t21 + t18
+    total = t19
+    t22 = i + 1
+    i = t22
+    t25 = i * scale
+    t26 = total + t25
+    t23 = i * scale
+    t24 = t26 + t23
+    total = t24
+    t27 = i + 1
+    i = t27
+    goto L_unroll_main_1
+L_while_start0:
+    t0 = i < 1000
+    ifFalse t0 goto L_while_end1
+    t1 = i * scale
+    t2 = total + t1
+    t3 = i * scale
+    t4 = t2 + t3
+    total = t4
+    t5 = i + 1
+    i = t5
+    goto L_while_start0
+L_while_end1:
+    t6 = total % 256
+    return t6
+
+

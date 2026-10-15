@@ -1,0 +1,46 @@
+﻿=== Control Flow Graphs (CFG per Function) ===
+--- Function: main (Blocks: 4, Loops: 1, Max Depth: 1) ---
+┌─ BasicBlock 0 (Preds: Entry) -> (Succs: BB1)
+│  alloc scale : int
+│  scale = 8
+│  alloc total : int
+│  total = 0
+│  alloc i : int
+│  i = 0
+└────────────────────────────────────────
+┌─ BasicBlock 1 [L_while_start0] (Preds: BB0, BB2) -> (Succs: BB3, BB2)
+│  L_while_start0:
+│  t0 = i < 1000
+│  ifFalse t0 goto L_while_end1
+└────────────────────────────────────────
+┌─ BasicBlock 2 (Preds: BB1) -> (Succs: BB1)
+│  t1 = i * scale
+│  t2 = total + t1
+│  t3 = i * scale
+│  t4 = t2 + t3
+│  total = t4
+│  t5 = i + 1
+│  i = t5
+│  goto L_while_start0
+└────────────────────────────────────────
+┌─ BasicBlock 3 [L_while_end1] (Preds: BB1) -> (Succs: Exit)
+│  L_while_end1:
+│  t6 = total % 256
+│  return t6
+└────────────────────────────────────────
+
+Mermaid Flowchart:
+```mermaid
+flowchart TD
+    subgraph main["Function: main"]
+        BB0["<b>BB0</b><br/>alloc scale : int<br/>scale = 8<br/>alloc total : int<br/>total = 0<br/>alloc i : int<br/>i = 0"]
+        BB1["<b>BB1 (L_while_start0)</b><br/>L_while_start0:<br/>t0 = i < 1000<br/>ifFalse t0 goto L_while_end1"]
+        BB2["<b>BB2</b><br/>t1 = i * scale<br/>t2 = total + t1<br/>t3 = i * scale<br/>t4 = t2 + t3<br/>total = t4<br/>t5 = i + 1<br/>... (2 more insts)"]
+        BB3["<b>BB3 (L_while_end1)</b><br/>L_while_end1:<br/>t6 = total % 256<br/>return t6"]
+        BB0 --> BB1
+        BB1 --> BB3
+        BB1 --> BB2
+        BB2 -. Loop Back-Edge .-> BB1
+    end
+```
+

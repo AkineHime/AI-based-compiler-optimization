@@ -1,0 +1,40 @@
+﻿=== Applying Optimization Combo 9 (Constant Folding (CF), Loop-Invariant Code Motion (LICM)) ===
+=== Three-Address Code (TAC) ===
+func main() -> int:
+    alloc a : int
+    a = 123
+    alloc b : int
+    b = 45
+    alloc c : int
+    c = 67
+    alloc acc : int
+    acc = 0
+    alloc i : int
+    i = 0
+    t1 = 5535
+    t3 = 8241
+    t5 = 15129
+    t7 = 2025
+    t9 = 4489
+    t11 = 5535
+    t12 = 370845
+L_while_start0:
+    t0 = i < 60000000
+    ifFalse t0 goto L_while_end1
+    t2 = acc + 5535
+    t4 = t2 + 8241
+    t6 = t4 + 15129
+    t8 = t6 + 2025
+    t10 = t8 + 4489
+    t13 = t10 + 370845
+    acc = t13
+    t14 = i + 1
+    i = t14
+    goto L_while_start0
+L_while_end1:
+    t15 = acc % 251
+    t16 = t15 + 251
+    t17 = t16 % 251
+    return t17
+
+

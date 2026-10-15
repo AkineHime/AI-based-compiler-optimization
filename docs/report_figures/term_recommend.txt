@@ -1,0 +1,40 @@
+﻿# licm_arith.mc
+
+static + opportunity features (27):
+  total_instructions             35
+  basic_block_count              4
+  loop_count                     1
+  max_loop_depth                 1
+  branch_count                   1
+  branch_density                 0.0286
+  arithmetic_ops_count           17
+  multiplication_count           7
+  constant_load_count            10
+  array_access_count             0
+  array_2d_access_count          0
+  struct_access_count            0
+  function_call_count            0
+  recursive_call_count           0
+  named_variable_count           5
+  temp_variable_count            18
+  string_ops_count               0
+  instruction_density_in_loops   0.5714
+  cyclomatic_complexity          2
+  opp_const_foldable             6
+  opp_cse_redundant              1
+  opp_licm_hoistable             6
+  opp_sr_reducible               0
+  opp_unrollable_loops           0
+  opp_loop_body_insts            20
+  opp_hot_invariant_frac         0.3
+  opp_est_dyn_kilo_insts         1.2e+06
+
+ML-recommended combo: 39  [Constant Folding (CF), Dead Code Elimination (DCE), Common Subexpression Elimination (CSE), Loop Unrolling (LU)]   predicted speedup x1.681
+top 5 predicted:
+  combo 39  x1.681  [Constant Folding (CF), Dead Code Elimination (DCE), Common Subexpression Elimination (CSE), Loop Unrolling (LU)]
+  combo 11  x1.676  [Constant Folding (CF), Dead Code Elimination (DCE), Loop-Invariant Code Motion (LICM)]
+  combo 27  x1.676  [Constant Folding (CF), Dead Code Elimination (DCE), Loop-Invariant Code Motion (LICM), Strength Reduction (SR)]
+  combo  7  x1.671  [Constant Folding (CF), Dead Code Elimination (DCE), Common Subexpression Elimination (CSE)]
+  combo 55  x1.668  [Constant Folding (CF), Dead Code Elimination (DCE), Common Subexpression Elimination (CSE), Strength Reduction (SR), Loop Unrolling (LU)]
+
+measured:  baseline 168.92 ms   combo 39 99.62 ms   speedup x1.696   (exit 108, match True)

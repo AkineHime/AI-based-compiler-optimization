@@ -1,0 +1,27 @@
+﻿=== Applying Optimization Combo 21 (Constant Folding (CF), Common Subexpression Elimination (CSE), Strength Reduction (SR)) ===
+=== Three-Address Code (TAC) ===
+func main() -> int:
+    alloc scale : int
+    scale = 8
+    alloc total : int
+    total = 0
+    alloc i : int
+    i = 0
+    __sr7 = 0
+L_while_start0:
+    t0 = i < 1000
+    ifFalse t0 goto L_while_end1
+    t1 = __sr7
+    t2 = total + __sr7
+    t3 = __sr7
+    t4 = t2 + __sr7
+    total = t4
+    t5 = i + 1
+    i = t5
+    __sr7 = __sr7 + 8
+    goto L_while_start0
+L_while_end1:
+    t6 = total % 256
+    return t6
+
+
