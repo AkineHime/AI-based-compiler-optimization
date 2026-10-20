@@ -491,4 +491,6 @@ def build_pdf(filename="Compiler_Design_Project_Review_1_Report.pdf"):
     return num_pages
 
 if __name__ == '__main__':
+    # image paths and the output file are relative to reports/
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
     build_pdf()

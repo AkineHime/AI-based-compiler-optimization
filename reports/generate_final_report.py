@@ -1,7 +1,7 @@
 """Final project report (BCSE307P Innovative Project) -> Compiler_Design_Project_Final_Report.docx
 
-    python generate_final_report.py              # figures + docx
-    python generate_final_report.py --no-figures # docx only (reuse docs/report_figures/*.png)
+    python reports/generate_final_report.py              # figures + docx
+    python reports/generate_final_report.py --no-figures # docx only (reuse docs/report_figures/*.png)
 
 Fills the VIT report template (title page + the template's seven headings) with the
 900-program results.  Charts are drawn from data/benchmark_dataset.csv; terminal
@@ -12,6 +12,7 @@ import argparse
 import math
 import os
 import re
+import sys
 from collections import defaultdict
 
 import matplotlib
@@ -19,13 +20,16 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch
 
-from src.minic.harness.report import summarize
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path.insert(0, ROOT)
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+from src.minic.harness.report import summarize  # noqa: E402
+
 FIG = os.path.join(ROOT, "docs", "report_figures")
 DATASET = os.path.join(ROOT, "data", "benchmark_dataset.csv")
 TEMPLATE = os.path.join(os.path.expanduser("~"), "Downloads", "Project - Report Template.docx")
-OUT = os.path.join(ROOT, "Compiler_Design_Project_Final_Report.docx")
+OUT = os.path.join(HERE, "Compiler_Design_Project_Final_Report.docx")
 
 PASS_BITS = [(1, "CF"), (2, "DCE"), (4, "CSE"), (8, "LICM"), (16, "SR"), (32, "LU")]
 
@@ -695,7 +699,7 @@ def F(name):
 
 
 def S(name):
-    return os.path.join(ROOT, "output-images", name)
+    return os.path.join(HERE, "output-images", name)
 
 
 # --------------------------------------------------------------------------- #

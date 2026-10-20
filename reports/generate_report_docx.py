@@ -502,4 +502,6 @@ def build_docx(filename="Compiler_Design_Project_Review_1_Report.docx"):
     print(f"Generated {filename} successfully.")
 
 if __name__ == '__main__':
+    # image paths and the output file are relative to reports/
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
     build_docx()

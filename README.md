@@ -1,31 +1,40 @@
 # AI-Based Compiler Optimization for MiniC
 
-A source-level optimizer for **MiniC** (a small, pointer-free, dynamic-memory-free
-C dialect) plus a machine-learning model that, given a program it has never run,
-**recommends which optimization passes to turn on**.
+Which optimization passes should a compiler run on *this* program? This project
+answers it on the clock instead of with a hand-tuned cost model. It contains a
+complete compiler for **MiniC** (a pointer-free C dialect), six toggleable
+optimization passes, a parallel timing harness, and a model that predicts the
+speedup of any pass combination **without running the program**.
 
-Every claim is measured, not modelled: each program is emitted to C at all 64 pass
-combinations, compiled with `gcc -O0`, and timed on real binaries.
+**57,600 measured configurations**: 900 programs x all 64 pass combinations, each
+emitted to C, compiled with `gcc -O0`, checked for correctness, and timed on real
+binaries. `gcc` is pinned at `-O0` so every measured gain comes from *our* passes.
 
-## Result
-
-On 900 benchmarks (30 hand-written + 870 parametric), each swept over all 64 pass
-combinations = **57,600 timed configurations**:
+## Key findings
 
 | | |
 |---|---|
-| Best pass combo per program, geomean speedup | **×1.31** (max ×4.37) |
-| Turning all 6 passes on | ×1.19 — and *not* the per-program best on 715 / 900 |
-| No fixed non-empty combo is safe | every one regresses >3% on at least one program |
-| Recommender (Random Forest + abstain margin), held-out true speedup | **×1.21** vs ×1.33 oracle — 63% of the achievable gain |
-| Recommendations that regress the program | **9%** (down from 12% for naive argmax) |
-| 8-model bake-off (Linear / RF / HGBT / MLP / 1D-CNN / GRU + hybrids) | HistGBT best at ×1.209 (≤10% regressions); 1D-CNN on raw TAC close behind at ×1.197 |
+| Best combo per program (oracle) | **x1.31** geomean, up to **x4.37** |
+| Gap left by "turn every pass on" | all-on is >2% short of the per-program best on **715 / 900** programs, and **2.3x slower** than no optimization on the worst one |
+| Pass effects are **not additive** | the product of single-pass speedups predicts x1.10 all-on; measured is x1.19. It is >10% off on **680 / 900** programs |
+| A pass that usually hurts | strength reduction slows down **25%** of programs at `-O0` and helps only 16% |
+| Blind search is costly and unsafe | **25%** of all configurations are slower than doing nothing; greedy search needs **16.4 timed runs** per program to reach x1.25 |
+| Learned model (zero runs, held-out programs) | **x1.21** mean speedup with **9%** regressions. All-on gives x1.22 with 12.4% regressions |
+| Measurement noise under parallel load | median/min run time is 1.10 (p95 **1.41**), so the harness records the least-interfered of 15 runs |
 
-The C compiler is pinned at `-O0` on purpose: the measured delta is what *our*
-optimizer contributed, not what `gcc` would have done anyway. `gcc -O2` is shown
-only as a reference point.
+**Honest result:** the learned model *matches* the "all passes on" heuristic in
+average speedup and cuts regressions by about a quarter (12.4% to 9%). It does
+**not yet beat it**. Neither does any fallback variant tried: abstaining to
+all-on instead of no-passes peaks at x1.223. The remaining gap to the oracle
+(x1.33 mean) is the open problem. Static features miss the pass interactions
+that dominate the measured speedups (see finding 3).
 
-Full numbers: [`RESULTS.md`](RESULTS.md) · visual report: [`docs/results.html`](docs/results.html) · stage-by-stage walkthrough of one program through the whole pipeline: [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md).
+Write-ups:
+[`PERF_ANALYSIS.md`](PERF_ANALYSIS.md): per-pass marginal effects, non-additivity, search cost, noise ·
+[`RESULTS.md`](RESULTS.md): per-program and per-category speedups ·
+[`MODEL_COMPARISON.md`](MODEL_COMPARISON.md): 8-model bake-off (Ridge / RF / HistGBT / MLP / 1D-CNN / GRU / hybrids) ·
+[`docs/results.html`](docs/results.html): visual report ·
+[`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md): one program traced through every stage
 
 ## Quickstart
 
@@ -46,10 +55,27 @@ python -m demo.app            # http://127.0.0.1:5005
 python run_experiment.py                 # ~3.5 h full sweep (900 programs, 8 workers)
 python run_experiment.py --skip-sweep    # ~3 min: re-bake / retrain from the CSV
 python run_experiment.py --skip-sweep --compare-models   # + 8-model bake-off -> MODEL_COMPARISON.md (~25 min)
+python -m src.minic.harness.perf_analysis                 # ~5 s: PERF_ANALYSIS.md from the CSV
 ```
 
 Requirements: Python 3.9+ for the compiler itself; `numpy` / `scikit-learn` /
 `pandas` (and `flask` for the demo) for the ML pipeline. `gcc` on `PATH`.
+
+## Methodology
+
+- **Correctness gate:** every one of the 64 combos must reproduce the
+  unoptimized binary's exit code before its timing is recorded, so a miscompile
+  contributes no data.
+- **Timing:** 4 warm-up runs, then the minimum of 15 wall-clock runs, with 8
+  programs swept in parallel. The minimum is the least-interfered sample. The
+  median is 10-40% noisier under this load.
+- **`gcc -O0`:** the backend adds nothing, so a speedup is attributable to the
+  MiniC passes alone. `gcc -O2` appears only as a reference point.
+- **No leakage:** cross-validation uses GroupKFold by program. All 64 rows of a
+  program share its static features, so a random split would leak.
+- **Metrics:** speedup = `time(no passes) / time(combo)`. "Regression" means
+  >2% slower than no passes. Means are arithmetic unless marked geomean, and
+  comparisons always use the same kind.
 
 ## Pipeline
 
@@ -97,7 +123,9 @@ tests/                pytest — front end, IR, every pass × 64 combos, harness
 data/                 benchmark_dataset.csv (tracked); trained_model.pkl (gitignored)
 run_experiment.py     one command: sweep → dataset → bake-off → train → RESULTS.md
 RESULTS.md            current measured results
+PERF_ANALYSIS.md      pass interactions, search cost, measurement noise
 MODEL_COMPARISON.md   8-model bake-off (tabular / sequence / hybrid)
+reports/              course reports (Review 1 / Final) + their generators
 docs/
   results.html        the visual results report
   WALKTHROUGH.md      one program traced through every stage (lexer → … → ML)
@@ -112,9 +140,7 @@ docs/
 python -m pytest -q
 ```
 
-Correctness gate: **every one of the 64 pass combinations, for every benchmark,
-must reproduce the unoptimized binary's exit code** before its timing is recorded
-— a miscompiled combo contributes no data. The suite runs the front end, IR, each
+The suite runs the front end, IR, each
 pass individually and in 64-combo sweeps, the harness, and the ML dataset plumbing.
 
 ## Team

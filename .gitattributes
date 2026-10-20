@@ -13,3 +13,9 @@
 *.pkl  binary
 *.npz  binary
 *.exe  binary
+
+# GitHub language stats: .mc is MiniC (a C dialect), not Garmin "Monkey C".
+*.mc linguist-language=C
+# Generated / report artifacts shouldn't skew the language bar.
+reports/** linguist-documentation
+docs/**    linguist-documentation
