@@ -153,14 +153,33 @@ def _unroll_one(func: TACFunction, done: set) -> bool:
     return False
 
 
+_CONTROL = (Opcode.JUMP, Opcode.JUMP_IF_TRUE, Opcode.JUMP_IF_FALSE, Opcode.RETURN)
+
+
 def _already_unrolled(insts: List[TACInstruction], head_label: str) -> bool:
-    """True if `head_label` is already the remainder of an unroll prologue --
-    i.e. some `L_unroll_*` guard block branches into it."""
+    """True if `head_label` is already the remainder of an unroll prologue, i.e. an
+    `L_unroll_*` guard exits into it.
+
+    The exit need not target the head directly: a later LICM round can put a
+    pre-header (`L_licm_pre_*`, possibly holding hoisted code) between the guard and
+    the loop. So follow the guard's exit target forward through straight-line code;
+    if it falls through into `head_label`, the loop is a remainder. (Without this,
+    LU + LICM re-unrolled the remainder every round, doubling the code.)
+    """
+    label_pos = {str(ins.dst): k for k, ins in enumerate(insts) if ins.opcode == Opcode.LABEL}
     for k, ins in enumerate(insts):
-        if (ins.opcode == Opcode.JUMP_IF_FALSE and str(ins.dst) == head_label
-                and k >= 2 and insts[k - 2].opcode == Opcode.LABEL
+        if not (ins.opcode == Opcode.JUMP_IF_FALSE and k >= 2
+                and insts[k - 2].opcode == Opcode.LABEL
                 and str(insts[k - 2].dst).startswith("L_unroll_")):
-            return True
+            continue
+        j = label_pos.get(str(ins.dst))
+        while j is not None and j < len(insts):
+            here = insts[j]
+            if here.opcode == Opcode.LABEL and str(here.dst) == head_label:
+                return True
+            if here.opcode in _CONTROL:
+                break
+            j += 1
     return False
 
 
@@ -262,7 +281,9 @@ def _fresh_temp(func: TACFunction, type_str: str = "int") -> Temp:
 def _rename_temps(body: List[TACInstruction], alloc: "_TempAllocator") -> List[TACInstruction]:
     """Deep-copy `body` with every temporary it *defines* remapped to a fresh id
     (uses of those temps are remapped too; temps defined outside stay put)."""
-    local_defs: Set[str] = {str(b.dst) for b in body if isinstance(b.dst, Temp)}
+    # in body order (not a set): fresh ids must not depend on string hashing, or the
+    # compiler's output would change from one Python process to the next
+    local_defs = list(dict.fromkeys(str(b.dst) for b in body if isinstance(b.dst, Temp)))
     remap: Dict[str, Temp] = {
         name: alloc.fresh(alloc.func.local_types.get(name, "int"))
         for name in local_defs

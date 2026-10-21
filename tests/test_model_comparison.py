@@ -37,6 +37,10 @@ class TestModelSpecs(unittest.TestCase):
         self.assertNotIn("linear", TORCH_MODELS)
 
     def test_torch_nets_build(self):
+        try:
+            import torch  # noqa: F401  (optional: only the CNN/GRU bake-off needs it)
+        except ImportError:
+            self.skipTest("torch not installed (pip install -r requirements-models.txt)")
         from src.minic.ml.models_torch import _build
         for k in ("mlp", "cnn1d", "gru", "cnn1d_hybrid", "gru_hybrid"):
             net = _build(k, 27)

@@ -1,3 +1,4 @@
+import pytest
 import unittest
 import os
 import shutil
@@ -44,11 +45,15 @@ class TestOptimizerSweep(unittest.TestCase):
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
 
+    @pytest.mark.slow
+
     def test_canonical_example_64_combos(self):
         canon = os.path.join(os.path.dirname(__file__), os.pardir, "canonical_example.mc")
         with open(canon, "r", encoding="utf-8") as f:
             code = f.read()
         self._run_64_combo_sweep(code, 83, "canonical")
+
+    @pytest.mark.slow
 
     def test_numeric_matrix_mult_64_combos(self):
         code = """
@@ -81,6 +86,8 @@ class TestOptimizerSweep(unittest.TestCase):
         }
         """
         self._run_64_combo_sweep(code, 134, "mat_mul")
+
+    @pytest.mark.slow
 
     def test_struct_particles_64_combos(self):
         code = """

@@ -2,6 +2,7 @@
 containing arrays.  These lower to load / mutate-copy / store-back chains
 (MiniC value semantics), and must round-trip under every optimization combo.
 """
+import pytest
 import shutil
 import tempfile
 import unittest
@@ -61,6 +62,7 @@ PROGRAMS = {
 
 @unittest.skipIf(shutil.which("gcc") is None, "gcc not on PATH")
 class TestNestedAggregates(unittest.TestCase):
+    @pytest.mark.slow
     def test_round_trip_all_combos(self):
         for name, (src, expected) in PROGRAMS.items():
             with self.subTest(program=name):

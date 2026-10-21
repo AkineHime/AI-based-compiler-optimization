@@ -2,9 +2,7 @@ import sys
 import os
 import json
 import argparse
-import shutil
 import subprocess
-import tempfile
 
 # The AST tree and CFG printers use Unicode box-drawing glyphs; the default
 # Windows console codepage (cp1252) can't encode them. Force UTF-8 output.
@@ -111,43 +109,43 @@ def process_file(
             print(c_code)
             print()
 
-        # 8. Compile and Run with GCC
+        # 8. Compile with gcc -O0 (same flags as the timing harness) and run
         if run_binary:
-            workdir = tempfile.mkdtemp(prefix="minic_driver_")
-            c_file = os.path.join(workdir, "out.c")
-            bin_file = os.path.join(workdir, "out" + (".exe" if os.name == "nt" else ""))
-            with open(c_file, "w", encoding="utf-8") as f:
-                f.write(c_code)
-
+            from .harness.compiler import compile_c, cleanup
+            cr = compile_c(c_code, tag="driver")
+            if not cr.ok:
+                print("Compilation error:\n" + cr.stderr, file=sys.stderr)
+                sys.exit(1)
             try:
-                comp = subprocess.run(["gcc", "-O0", "-o", bin_file, c_file], capture_output=True, text=True)
-                if comp.returncode != 0:
-                    print("Compilation Error:\n", comp.stderr, file=sys.stderr)
-                    sys.exit(1)
-
-                run = subprocess.run([bin_file])
-                print(f"Program exited with return code: {run.returncode}")
+                run = subprocess.run([cr.binary_path])
+                print(f"Program returned: {run.returncode}")
             finally:
-                shutil.rmtree(workdir, ignore_errors=True)
+                cleanup(cr.c_path, cr.binary_path)
 
     except MiniCError as e:
         print(e, file=sys.stderr)
         sys.exit(1)
 
 
-def main():
-    parser = argparse.ArgumentParser(description="MiniC Compiler Front-End, IR, Optimizer, and Codegen Pipeline")
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        prog="minic compile",
+        description="Compile a MiniC file: show its AST / TAC / CFG / features, optimize it, "
+                    "emit C, and run it. With no flags, prints the TAC.")
     parser.add_argument("file", help="Path to .mc MiniC source file")
     parser.add_argument("--tree", action="store_true", help="Print visual AST tree diagram with branch glyphs")
     parser.add_argument("--ast", action="store_true", help="Print Abstract Syntax Tree (indented text)")
     parser.add_argument("--tac", action="store_true", help="Print Three-Address Code")
     parser.add_argument("--cfg", action="store_true", help="Print visual Control Flow Graph (CFG) and Mermaid diagrams")
     parser.add_argument("--features", action="store_true", help="Print the 27 extracted features (19 structural + 8 opportunity), JSON")
-    parser.add_argument("--optimize", type=int, default=0, help="6-bit combo mask (0..63): CF DCE CSE LICM SR LU")
+    parser.add_argument("--optimize", type=int, default=0, help="pass combo 0-63, a sum of CF=1 DCE=2 CSE=4 LICM=8 SR=16 LU=32 (63 = all)")
     parser.add_argument("--emit-c", action="store_true", help="Emit value-semantics C code")
     parser.add_argument("--run", action="store_true", help="Compile emitted C with gcc -O0 and run")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if not 0 <= args.optimize <= 63:
+        parser.error("--optimize must be a combo between 0 and 63 (6 bits: CF=1 DCE=2 CSE=4 "
+                     "LICM=8 SR=16 LU=32)")
 
     show_tac = args.tac or (not args.ast and not args.tree and not args.cfg and not args.features and not args.emit_c and not args.run)
 

@@ -31,20 +31,25 @@ from src.minic.harness.compiler import compile_c, cleanup
 from src.minic.harness.timer import measure_execution_time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(os.path.dirname(HERE), "data", "trained_model.pkl")
 
 app = Flask(__name__, static_folder=os.path.join(HERE, "static"))
 app.json.sort_keys = False  # keep EXAMPLES in insertion order (first = default)
 
 _MODEL = None
 _MODEL_ERR = None
-try:
-    from src.minic.ml.model import SpeedupModel
-    from src.minic.ml.predictor import recommend_combo
-    if os.path.exists(MODEL_PATH):
-        _MODEL = SpeedupModel.load(MODEL_PATH)
-except Exception as e:  # noqa: BLE001
-    _MODEL_ERR = str(e)
+
+
+def _load_model():
+    """Load (or train once, ~15 s) the recommender. Falls back to 'all passes' on failure."""
+    global _MODEL, _MODEL_ERR
+    try:
+        from src.minic.ml.predictor import load_or_train
+        _MODEL = load_or_train(log=lambda m: print("  " + m))
+    except Exception as e:  # noqa: BLE001
+        _MODEL_ERR = str(e)
+
+
+from src.minic.ml.predictor import recommend_combo  # noqa: E402
 
 
 EXAMPLES = {
@@ -93,7 +98,7 @@ int main() {
     return ((acc % 251) + 251) % 251;
 }
 """,
-    "recursion -- model declines": """int ack(int m, int n) {
+    "recursion (little to optimize)": """int ack(int m, int n) {
     if (m == 0) { return n + 1; }
     if (n == 0) { return ack(m - 1, 1); }
     return ack(m - 1, ack(m, n - 1));
@@ -184,7 +189,8 @@ def _time_build(c_src: str, tag: str, opt_flag: str, runs: int, expect=None):
         return {"ok": False, "error": str(e)}
     cleanup(cr.c_path, cr.binary_path)
     return {"ok": True, "median_ms": round(tr.median_ms, 2),
-            "min_ms": round(tr.min_ms, 2), "exit_code": tr.exit_code}
+            "min_ms": round(tr.min_ms, 2), "exit_code": tr.exit_code,
+            "samples_ms": [round(x, 2) for x in tr.samples_ms]}
 
 
 @app.get("/")
@@ -219,10 +225,15 @@ def compile_endpoint():
 
     # recommend
     strategy = margin = None
+    predictions = None
     if _MODEL is not None:
         combo, pred, _names = recommend_combo(feats, _MODEL)
         strategy = _MODEL.metadata.get("strategy")
         margin = _MODEL.metadata.get("margin")
+        # the model's predicted speedup for every combo, for the page's chart
+        from src.minic.ml.dataset import features_to_x
+        predictions = [round(float(v), 3) for v in
+                       _MODEL.predict([features_to_x(feats, c) for c in range(NUM_COMBOS)])]
     else:
         combo, pred = NUM_COMBOS - 1, None  # fall back to "all passes"
 
@@ -260,9 +271,13 @@ def compile_endpoint():
         "optimized": optimized,
         "o2": o2,
         "activity": _pass_activity(tac, combo),
+        "predictions": predictions,
         "tac_before": IRPrinter.format_program(optimize_program(tac, 0)),
         "tac_after": IRPrinter.format_program(optimize_program(tac, combo)),
     }
+    count = lambda t: sum(len(f.instructions) for f in t.functions)
+    resp["n_instr_before"] = count(optimize_program(tac, 0))
+    resp["n_instr_after"] = count(optimize_program(tac, combo))
     if optimized.get("ok"):
         resp["speedup"] = round(baseline["median_ms"] / optimized["median_ms"], 3)
     if o2.get("ok"):
@@ -273,10 +288,11 @@ def compile_endpoint():
 def main():
     port = int(os.environ.get("PORT", "5005"))
     url = f"http://127.0.0.1:{port}"
-    print(f"MiniC Playground -> {url}")
+    print("MiniC Playground")
+    _load_model()
     if _MODEL is None:
-        print(f"  (no trained model at {MODEL_PATH}; falling back to 'all passes'."
-              f"  run  python run_experiment.py  to train one)")
+        print(f"  (model unavailable: {_MODEL_ERR}; recommending 'all passes' instead)")
+    print(f"  open {url}   (Ctrl+C to stop)")
     try:
         import webbrowser
         webbrowser.open(url)

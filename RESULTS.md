@@ -24,12 +24,12 @@
 
 Cross-validation holds *whole programs* out -- a program's rows share identical static features, so a random split would leak. The selection strategy is itself cross-validated: from plain argmax, an abstain-margin sweep, and per-pass classifiers, the winner is the most useful recommender that keeps regressions under 10%.
 
-- Model: **random forest**, 900 held-out programs (900 programs, 5 folds)
+- Model: **hist gradient boosting**, 900 held-out programs (900 programs, 5 folds)
 - Speedup-prediction MAE: 0.105
 - Recommendations that regress the program (>2% slower than baseline): **9%**
 - **Model-recommended combo, mean true speedup on unseen programs: x1.21**
 - Baseline (combo 0): x1.00   |   oracle (best combo in hindsight): x1.33
-- Model captures **63%** of the available speedup without ever having timed the program.
+- Model captures **62%** of the available speedup without ever having timed the program.
 
 ## Per-program
 

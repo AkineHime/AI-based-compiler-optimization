@@ -6,207 +6,329 @@
 <title>MiniC Playground</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <style>
-  :root{
-    --ground:#fbfaf7; --surface:#f3f0ea; --surface-2:#ece7dd; --panel:#ffffff;
-    --ink:#1b1f26; --ink-soft:#4c5159; --ink-faint:#7c8089; --hair:#e2ded4;
-    --accent:#0c6b4f; --accent-2:#0a5d44; --accent-soft:#dcece5;
-    --baseline:#98917f; --o2:#4a6fa5; --warn:#a6602a; --bad:#b23b3b;
+:root {
+  --bg: #f7f6f2; --surface: #ffffff; --surface-2: #f0eee8; --surface-3: #e8e5dc; --line: #e3e0d7;
+  --ink: #16181d; --ink-2: #474b55; --muted: #80838c;
+  --green: #12805c; --green-2: #34c38f; --green-soft: #d8f0e5;
+  --blue: #2f6fdf; --purple: #7c4ddb; --orange: #d4651c; --red: #c6363b; --none: #9b9686;
+  --shadow: 0 1px 2px rgba(22,24,29,.04), 0 10px 28px -14px rgba(22,24,29,.18);
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1015; --surface: #151a21; --surface-2: #1c222b; --surface-3: #232a35; --line: #262d38;
+    --ink: #eceae4; --ink-2: #b6b8bf; --muted: #7f848f;
+    --green: #3ccf97; --green-2: #7ee8bd; --green-soft: #133428;
+    --blue: #6aa0ff; --purple: #a98bff; --orange: #f39a4d; --red: #ff6b6f; --none: #7d796d;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 32px -16px rgba(0,0,0,.6);
+    color-scheme: dark;
   }
-  @media (prefers-color-scheme:dark){:root:not([data-theme=light]){
-    --ground:#111419; --surface:#171b21; --surface-2:#20252e; --panel:#161a20;
-    --ink:#e9e7e1; --ink-soft:#aeb1b8; --ink-faint:#7c808a; --hair:#282d36;
-    --accent:#35bd90; --accent-2:#2aa87f; --accent-soft:#15342a;
-    --baseline:#847e70; --o2:#6f96c9; --warn:#d08a4f; --bad:#e06666;
-  }}
-  :root[data-theme=dark]{
-    --ground:#111419; --surface:#171b21; --surface-2:#20252e; --panel:#161a20;
-    --ink:#e9e7e1; --ink-soft:#aeb1b8; --ink-faint:#7c808a; --hair:#282d36;
-    --accent:#35bd90; --accent-2:#2aa87f; --accent-soft:#15342a;
-    --baseline:#847e70; --o2:#6f96c9; --warn:#d08a4f; --bad:#e06666;
-  }
-  *{box-sizing:border-box}
-  html,body{height:100%}
-  body{
-    margin:0; background:var(--ground); color:var(--ink);
-    font-family:"IBM Plex Sans",system-ui,sans-serif; font-size:14px;
-    display:flex; flex-direction:column; -webkit-font-smoothing:antialiased;
-  }
-  .mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
-  .tnum{font-variant-numeric:tabular-nums}
+}
+:root[data-theme="dark"] {
+  --bg: #0d1015; --surface: #151a21; --surface-2: #1c222b; --surface-3: #232a35; --line: #262d38;
+  --ink: #eceae4; --ink-2: #b6b8bf; --muted: #7f848f;
+  --green: #3ccf97; --green-2: #7ee8bd; --green-soft: #133428;
+  --blue: #6aa0ff; --purple: #a98bff; --orange: #f39a4d; --red: #ff6b6f; --none: #7d796d;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 32px -16px rgba(0,0,0,.6);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 Inter, system-ui, "Segoe UI", sans-serif; display: flex; flex-direction: column; }
+code, .mono { font-family: var(--mono); }
+button, select, input { font: inherit; color: inherit; }
 
-  header{
-    flex:none; display:flex; align-items:center; gap:16px;
-    padding:10px 16px; border-bottom:1px solid var(--hair); background:var(--surface);
-  }
-  .brand{font-weight:700; letter-spacing:-.01em; font-size:15px}
-  .brand b{color:var(--accent)}
-  header .sp{flex:1}
-  select,button,input{font-family:inherit; font-size:13px; color:var(--ink)}
-  select{
-    background:var(--panel); border:1px solid var(--hair); border-radius:6px;
-    padding:6px 10px; max-width:230px;
-  }
-  .runs{
-    display:flex; align-items:center; gap:6px; color:var(--ink-faint);
-    font-family:"IBM Plex Mono",monospace; font-size:12px;
-  }
-  .runs input{width:46px; background:var(--panel); border:1px solid var(--hair);
-    border-radius:5px; padding:5px 6px; text-align:center}
-  #run{
-    background:var(--accent); color:#fff; border:0; border-radius:7px;
-    padding:8px 18px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:8px;
-  }
-  #run:hover{background:var(--accent-2)}
-  #run:disabled{opacity:.6; cursor:progress}
-  .spin{width:13px;height:13px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;
-    border-radius:50%; animation:s .7s linear infinite; display:none}
-  #run.busy .spin{display:inline-block}
-  @keyframes s{to{transform:rotate(360deg)}}
-  .theme{background:none;border:1px solid var(--hair);border-radius:6px;padding:6px 9px;cursor:pointer;color:var(--ink-soft)}
+/* ---------- header ---------- */
+header { flex: none; display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--surface); flex-wrap: wrap; }
+.brand { font-weight: 800; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; margin-right: 6px; }
+.brand .dot { width: 10px; height: 10px; border-radius: 3px; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
+select { background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; max-width: 260px; }
+.sp { flex: 1; }
+.runs { display: flex; align-items: center; gap: 6px; color: var(--muted); font: 12px var(--mono); }
+.runs input { width: 52px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px; text-align: center; }
+#run { background: var(--green); color: #fff; border: 0; border-radius: 10px; padding: 9px 20px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--green) 70%, transparent); transition: transform .15s, filter .15s; }
+#run:hover { transform: translateY(-1px); filter: brightness(1.05); }
+#run:disabled { opacity: .75; cursor: progress; transform: none; }
+.spin { width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; display: none; }
+#run.busy .spin { display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.icon { background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; width: 34px; height: 34px; cursor: pointer; }
+.kbd { font: 11px var(--mono); color: var(--muted); }
 
-  main{flex:1; display:grid; grid-template-columns:1.05fr 1fr; min-height:0}
-  .pane{min-width:0; min-height:0; display:flex; flex-direction:column}
-  .pane.editor{border-right:1px solid var(--hair)}
-  .pane-head{
-    flex:none; padding:7px 14px; font-family:"IBM Plex Mono",monospace; font-size:11px;
-    letter-spacing:.09em; text-transform:uppercase; color:var(--ink-faint);
-    border-bottom:1px solid var(--hair); background:var(--surface); display:flex; gap:14px; align-items:center;
-  }
-  .CodeMirror,#code{flex:1; height:auto; font-family:"IBM Plex Mono",monospace; font-size:13.5px; line-height:1.55}
-  #code{width:100%; resize:none; border:0; padding:12px 14px; background:var(--panel); color:var(--ink); outline:none}
+/* ---------- layout ---------- */
+main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); min-height: 0; }
+.pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.pane.editor { border-right: 1px solid var(--line); }
+.pane-head { flex: none; padding: 8px 14px; font: 600 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); background: var(--surface); display: flex; justify-content: space-between; }
+.CodeMirror, #code { flex: 1; height: auto; font-family: var(--mono); font-size: 13.5px; line-height: 1.6; }
+#code { width: 100%; resize: none; border: 0; padding: 12px 14px; background: var(--surface); color: var(--ink); outline: none; }
+.CodeMirror { background: var(--surface); color: var(--ink); }
+.CodeMirror-gutters { background: var(--surface-2); border-right: 1px solid var(--line); }
+.CodeMirror-linenumber { color: var(--muted); }
+.CodeMirror-cursor { border-left-color: var(--ink); }
+.CodeMirror-selected, .CodeMirror-focused .CodeMirror-selected { background: var(--green-soft); }
+.CodeMirror-matchingbracket { color: var(--green) !important; }
+.cm-s-default .cm-keyword, .cm-s-default .cm-type, .cm-s-default .cm-variable-3 { color: var(--blue); }
+.cm-s-default .cm-number { color: var(--orange); }
+.cm-s-default .cm-string { color: var(--green); }
+.cm-s-default .cm-comment { color: var(--muted); }
+.cm-s-default .cm-variable, .cm-s-default .cm-def, .cm-s-default .cm-operator, .cm-s-default .cm-variable-2 { color: var(--ink); }
 
-  .tabs{flex:none; display:flex; border-bottom:1px solid var(--hair); background:var(--surface)}
-  .tabs button{
-    background:none; border:0; border-bottom:2px solid transparent; padding:9px 15px;
-    cursor:pointer; color:var(--ink-faint); font-weight:500;
-  }
-  .tabs button.on{color:var(--ink); border-bottom-color:var(--accent)}
-  .tabwrap{flex:1; overflow:auto; padding:18px}
-  .tabview{display:none}
-  .tabview.on{display:block}
+.tabs { flex: none; display: flex; gap: 2px; border-bottom: 1px solid var(--line); background: var(--surface); padding: 0 8px; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 14px; cursor: pointer; color: var(--muted); font-weight: 600; white-space: nowrap; }
+.tabs button.on { color: var(--ink); border-bottom-color: var(--green); }
+.tabwrap { flex: 1; overflow: auto; padding: 20px; }
+.tabview { display: none; }
+.tabview.on { display: block; animation: fade .35s ease; }
+@keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
-  .hint{color:var(--ink-faint); font-size:13px; line-height:1.6}
-  .err{
-    background:color-mix(in srgb, var(--bad) 9%, var(--surface));
-    border:1px solid color-mix(in srgb, var(--bad) 40%, var(--hair));
-    border-radius:7px; padding:12px 14px; white-space:pre-wrap;
-    font-family:"IBM Plex Mono",monospace; font-size:12.5px; color:var(--ink);
-  }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; box-shadow: var(--shadow); margin-bottom: 14px; }
+.h { font: 600 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; display: flex; justify-content: space-between; gap: 10px; }
+.hint { color: var(--ink-2); line-height: 1.6; }
+.muted { color: var(--muted); }
+.err { background: color-mix(in srgb, var(--red) 9%, var(--surface)); border: 1px solid color-mix(in srgb, var(--red) 40%, var(--line)); border-radius: 10px; padding: 12px 14px; white-space: pre-wrap; font: 12.5px var(--mono); }
 
-  /* result tab */
-  .big{
-    font-family:"IBM Plex Mono",monospace; font-weight:600; letter-spacing:-.03em;
-    font-size:clamp(2.4rem,6vw,3.6rem); line-height:1; color:var(--accent);
-  }
-  .big small{font-size:.32em; color:var(--ink-faint); font-weight:500; letter-spacing:0}
-  .sub{margin-top:8px; color:var(--ink-soft)}
-  .rv{
-    display:inline-flex; align-items:center; gap:8px; margin-top:16px;
-    font-family:"IBM Plex Mono",monospace; font-size:13px;
-    background:var(--surface); border:1px solid var(--hair); border-radius:6px; padding:6px 11px;
-  }
-  .rv .ok{color:var(--accent)} .rv .no{color:var(--bad)}
+/* ---------- welcome ---------- */
+.welcome h2 { margin: 0 0 8px; font-size: 22px; letter-spacing: -.02em; }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
+.steps div { background: var(--surface-2); border-radius: 12px; padding: 12px; font-size: 13px; color: var(--ink-2); }
+.steps b { display: block; color: var(--ink); margin-bottom: 4px; }
 
-  .bars{margin-top:22px; display:flex; flex-direction:column; gap:10px; max-width:440px}
-  .barrow{display:grid; grid-template-columns:120px 1fr auto; align-items:center; gap:10px;
-    font-family:"IBM Plex Mono",monospace; font-size:12px}
-  .barrow .lab{color:var(--ink-soft); text-align:right}
-  .bartrack{height:16px; background:var(--surface-2); border-radius:3px; overflow:hidden}
-  .barfill{height:100%; border-radius:3px}
-  .barfill.b0{background:var(--baseline)}
-  .barfill.b1{background:var(--accent)}
-  .barfill.b2{background:var(--o2)}
-  .barrow .v{color:var(--ink); font-variant-numeric:tabular-nums}
+/* ---------- progress ---------- */
+.stages { display: flex; gap: 8px; flex-wrap: wrap; }
+.stg { flex: 1 1 110px; background: var(--surface-2); border-radius: 12px; padding: 12px; position: relative; overflow: hidden; color: var(--muted); font-weight: 600; font-size: 13px; transition: color .3s; }
+.stg small { display: block; font-weight: 400; font-size: 12px; }
+.stg::after { content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--green); transition: width .9s cubic-bezier(.2,.8,.2,1); }
+.stg.active { color: var(--ink); }
+.stg.active::after { width: 75%; }
+.stg.done { color: var(--green); }
+.stg.done::after { width: 100%; transition-duration: .35s; }
 
-  /* optimization tab */
-  h3{margin:0 0 8px; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint); font-weight:600}
-  section{margin-bottom:24px}
-  .chips{display:flex; flex-wrap:wrap; gap:7px}
-  .chip{
-    font-family:"IBM Plex Mono",monospace; font-size:12px; padding:5px 10px; border-radius:5px;
-    border:1px solid var(--hair); color:var(--ink-faint); background:var(--surface);
-  }
-  .chip.on{border-color:var(--accent); color:var(--accent); background:var(--accent-soft)}
-  table{width:100%; border-collapse:collapse; font-size:12.5px}
-  th,td{text-align:left; padding:6px 8px; border-bottom:1px solid var(--hair)}
-  th{font-family:"IBM Plex Mono",monospace; font-weight:500; font-size:10.5px; letter-spacing:.06em;
-    text-transform:uppercase; color:var(--ink-faint)}
-  td.n{font-family:"IBM Plex Mono",monospace; text-align:right; font-variant-numeric:tabular-nums}
-  td.on{color:var(--accent)} td.off{color:var(--ink-faint)}
-  .feat-grid{display:grid; grid-template-columns:1fr 1fr; gap:2px 22px; font-family:"IBM Plex Mono",monospace; font-size:12px}
-  .feat-grid div{display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px dotted var(--hair)}
-  .feat-grid span:last-child{color:var(--ink-soft)}
+/* ---------- hero ---------- */
+.hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.big { font: 700 clamp(44px, 7vw, 72px)/1 var(--mono); letter-spacing: -.04em; color: var(--green); }
+.big.flat { color: var(--ink-2); }
+.big.slow { color: var(--orange); }
+.verdict { color: var(--ink-2); margin-top: 8px; max-width: 520px; }
+.badge { display: inline-flex; align-items: center; gap: 6px; font: 600 12px var(--mono); padding: 6px 10px; border-radius: 999px; background: var(--green-soft); color: var(--green); }
+.badge.bad { background: color-mix(in srgb, var(--red) 15%, transparent); color: var(--red); }
+.badges { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
 
-  /* tac diff */
-  .diff{display:grid; grid-template-columns:1fr 1fr; gap:12px}
-  .diff pre{
-    margin:0; padding:12px; background:var(--surface); border:1px solid var(--hair); border-radius:7px;
-    font-family:"IBM Plex Mono",monospace; font-size:11.5px; line-height:1.5; overflow:auto; max-height:70vh;
-    white-space:pre;
-  }
-  .diff .cap{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-faint); margin-bottom:5px; text-transform:uppercase; letter-spacing:.08em}
-  @media(max-width:1100px){ main{grid-template-columns:1fr; grid-template-rows:1fr 1fr} .pane.editor{border-right:0;border-bottom:1px solid var(--hair)} .diff{grid-template-columns:1fr} }
+.switches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.sw { border: 1px solid var(--line); border-radius: 12px; padding: 10px 8px; text-align: center; background: var(--surface-2); transition: all .4s cubic-bezier(.2,.8,.2,1); position: relative; }
+.sw b { display: block; font: 700 13px var(--mono); }
+.sw small { font-size: 11px; color: var(--muted); }
+.sw .led { width: 26px; height: 14px; border-radius: 99px; background: var(--surface-3); margin: 0 auto 8px; position: relative; transition: background .4s; }
+.sw .led::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); transition: transform .4s cubic-bezier(.2,.8,.2,1.4), background .4s; }
+.sw.on { border-color: var(--green); background: var(--green-soft); }
+.sw.on .led { background: var(--green); }
+.sw.on .led::after { transform: translateX(12px); background: #fff; }
+
+/* ---------- race ---------- */
+.race { display: flex; flex-direction: column; gap: 14px; }
+.lane .top { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
+.lane .top b { font-weight: 600; }
+.lane .top .t { font: 600 13px var(--mono); }
+.track { height: 28px; background: var(--surface-2); border-radius: 9px; position: relative; overflow: hidden; }
+.fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 9px; }
+.fill.go { animation: grow var(--dur) linear forwards; }
+@keyframes grow { to { width: var(--w); } }
+.flag { position: absolute; right: 10px; top: 50%; transform: translateY(-50%) scale(.6); opacity: 0; font: 600 11px var(--mono); color: #fff; transition: all .3s; }
+.flag.show { opacity: 1; transform: translateY(-50%) scale(1); }
+.race-note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+.strip { position: relative; height: 34px; margin-top: 4px; }
+.strip i { position: absolute; top: 50%; width: 8px; height: 8px; border-radius: 50%; margin: -4px 0 0 -4px; opacity: 0; transition: opacity .4s, transform .4s; transform: scale(.4); }
+.strip i.in { opacity: .8; transform: scale(1); }
+.strip .med { position: absolute; top: 4px; bottom: 4px; width: 2px; margin-left: -1px; border-radius: 2px; }
+.axis { display: flex; justify-content: space-between; font: 11px var(--mono); color: var(--muted); margin-top: 4px; }
+
+.counts { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.counts .n { font: 700 28px var(--mono); }
+.counts .arrow { color: var(--muted); font-size: 20px; }
+
+/* ---------- model ---------- */
+.heat { display: grid; grid-template-columns: 70px repeat(8, minmax(0, 1fr)); gap: 3px; max-width: 640px; }
+.heat .cell { aspect-ratio: 1.4; border-radius: 6px; display: grid; place-items: center; font: 600 10px var(--mono); color: rgba(0,0,0,.72); opacity: 0; transform: scale(.6); transition: opacity .45s, transform .45s cubic-bezier(.2,.9,.3,1.3); outline: 2px solid transparent; outline-offset: 1px; cursor: default; }
+.heat.in .cell { opacity: 1; transform: none; }
+.heat .cell.pick { outline-color: var(--ink); }
+.heat .cell.all { box-shadow: inset 0 0 0 2px var(--blue); }
+.heat .rl, .heat .cl { font: 500 10px var(--mono); color: var(--muted); display: flex; align-items: center; gap: 4px; }
+.heat .cl { flex-direction: column; justify-content: flex-end; padding-bottom: 3px; }
+.pips { display: inline-flex; gap: 2px; }
+.pips b { width: 6px; height: 6px; border-radius: 2px; background: var(--line); }
+.pips b.on { background: var(--green); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--ink-2); margin-top: 12px; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; }
+.top5 { display: flex; flex-direction: column; gap: 6px; }
+.top5 .r { display: grid; grid-template-columns: 70px 1fr 64px; gap: 10px; align-items: center; font-size: 13px; }
+.top5 .bar { height: 10px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
+.top5 .bar span { display: block; height: 100%; width: 0; background: var(--purple); border-radius: 99px; transition: width 1s cubic-bezier(.2,.8,.2,1); }
+.feat { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; }
+.feat div { display: flex; justify-content: space-between; gap: 8px; background: var(--surface-2); border-radius: 8px; padding: 6px 10px; font: 12px var(--mono); }
+.feat div span:first-child { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feat div.hot { background: var(--green-soft); }
+.feat div.hot span:last-child { color: var(--green); font-weight: 600; }
+
+/* ---------- passes ---------- */
+.prow { display: grid; grid-template-columns: 190px 1fr 70px; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.prow:last-child { border-bottom: 0; }
+.prow .nm { font-weight: 600; }
+.prow .nm small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+.prow.off { opacity: .45; }
+.dbar { height: 14px; position: relative; }
+.dbar .mid { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--line); }
+.dbar span { position: absolute; top: 0; height: 100%; border-radius: 4px; width: 0; transition: width 1s cubic-bezier(.2,.8,.2,1); }
+.prow .v { font: 600 12px var(--mono); text-align: right; }
+
+/* ---------- diff (GitHub-style unified) ---------- */
+.dstat { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.dstat .add { color: var(--green); font: 600 13px var(--mono); }
+.dstat .del { color: var(--red); font: 600 13px var(--mono); }
+.dblocks { display: inline-flex; gap: 2px; }
+.dblocks i { width: 9px; height: 9px; border-radius: 2px; background: var(--surface-3); }
+.dblocks i.a { background: var(--green); } .dblocks i.d { background: var(--red); }
+.dfile { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); margin-bottom: 12px; }
+.dfile .fh { display: flex; justify-content: space-between; gap: 10px; padding: 8px 12px; background: var(--surface-2); border-bottom: 1px solid var(--line); font: 600 12px var(--mono); }
+.dfile .fh .muted { font-weight: 400; }
+.dtable { width: 100%; border-collapse: collapse; font: 12px/1.65 var(--mono); }
+.dtable td { padding: 0 10px; white-space: pre; vertical-align: top; }
+.dtable td.ln { width: 1%; text-align: right; color: var(--muted); user-select: none; padding: 0 8px; opacity: .7; }
+.dtable td.sg { width: 1%; user-select: none; padding: 0 2px 0 6px; color: var(--muted); }
+.dtable tr.add td { background: color-mix(in srgb, var(--green) 13%, transparent); }
+.dtable tr.add td.sg { color: var(--green); }
+.dtable tr.del td { background: color-mix(in srgb, var(--red) 12%, transparent); }
+.dtable tr.del td.sg { color: var(--red); }
+.dtable tr.add td.ln, .dtable tr.del td.ln { opacity: 1; }
+.dtable tr.hunk td { background: color-mix(in srgb, var(--blue) 9%, var(--surface)); color: var(--muted); padding: 3px 10px; }
+.dtable tr.fold td { background: var(--surface-2); color: var(--blue); cursor: pointer; padding: 4px 10px; text-align: center; font-size: 11.5px; }
+.dtable tr.fold:hover td { background: var(--surface-3); }
+.dtable .lab { color: var(--purple); }
+.dwrap { overflow-x: auto; }
+.nochange { text-align: center; padding: 28px 12px; color: var(--ink-2); }
+.nochange b { display: block; font-size: 16px; color: var(--ink); margin-bottom: 4px; }
+.sechead { font: 600 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 18px 0 8px; }
+
+/* ---------- result extras ---------- */
+.ring { position: relative; width: 120px; height: 120px; flex: none; }
+.ring svg { width: 120px; height: 120px; transform: rotate(-90deg); }
+.ring .bg { stroke: var(--surface-3); }
+.ring .fg { stroke: var(--green); stroke-linecap: round; transition: stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1); }
+.ring .lbl { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
+.ring .lbl b { font: 700 22px var(--mono); display: block; line-height: 1; }
+.ring .lbl small { font-size: 11px; color: var(--muted); }
+.duo { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 0 14px; }
+.meter { margin-top: 10px; }
+.meter .row { display: grid; grid-template-columns: max-content minmax(60px, 1fr) max-content; gap: 12px; align-items: center; font-size: 12.5px; margin-bottom: 8px; }
+.meter .row span:last-child { font: 600 12.5px var(--mono); text-align: right; }
+.meter .tr { height: 10px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
+.meter .tr i { display: block; height: 100%; width: 0; border-radius: 99px; transition: width 1.2s cubic-bezier(.2,.8,.2,1); }
+.big-sub { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+.reveal-in { animation: rise .5s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+
+#tip { position: fixed; z-index: 50; pointer-events: none; background: var(--ink); color: var(--bg); border-radius: 10px; padding: 8px 11px; font-size: 12.5px; line-height: 1.5; max-width: 260px; opacity: 0; transition: opacity .15s; }
+#tip.on { opacity: 1; }
+
+@media (max-width: 1000px) {
+  main { grid-template-columns: 1fr; grid-template-rows: minmax(300px, 42vh) 1fr; }
+  .pane.editor { border-right: 0; border-bottom: 1px solid var(--line); }
+  .diff, .steps { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  header { padding: 10px 12px; gap: 8px; }
+  select { max-width: 100%; flex: 1 1 100%; order: 5; }
+  .runs { font-size: 0; }
+  .runs input { font-size: 13px; }
+  .switches { grid-template-columns: repeat(3, 1fr); }
+  .tabwrap { padding: 14px; }
+  .prow { grid-template-columns: 1fr 70px; }
+  .prow .dbar { grid-column: 1 / -1; grid-row: 2; }
+  .heat { grid-template-columns: 26px repeat(8, minmax(0, 1fr)); gap: 2px; }
+  .heat .rl span, .heat .cl span { display: none; }
+  .heat .cell { font-size: 7px; aspect-ratio: 1; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .heat .cell, .strip i { opacity: 1; transform: none; } }
 </style>
 </head>
 <body>
 <header>
-  <span class="brand">Mini<b>C</b> Playground</span>
-  <select id="examples" title="load an example"></select>
+  <div class="brand"><span class="dot"></span>MiniC Playground</div>
+  <select id="examples" title="Load an example program" aria-label="Example program"></select>
   <span class="sp"></span>
-  <label class="runs">runs <input id="runs" type="number" min="3" max="15" value="7"></label>
-  <button id="run"><span class="spin"></span><span class="lbl">Run &#9654;</span></button>
-  <button class="theme" id="theme" title="toggle theme">&#9680;</button>
+  <label class="runs" title="How many times each build is run and timed">runs <input id="runs" type="number" min="3" max="15" value="7"></label>
+  <button id="run" title="Compile and time (Ctrl+Enter)"><span class="spin"></span><span class="lbl">Run ▶</span></button>
+  <button class="icon" id="theme" title="Toggle light / dark" aria-label="Toggle theme">◐</button>
 </header>
 
 <main>
   <div class="pane editor">
-    <div class="pane-head">source &mdash; MiniC</div>
-    <textarea id="code" spellcheck="false"></textarea>
+    <div class="pane-head"><span>MiniC source</span><span class="kbd">Ctrl+Enter to run</span></div>
+    <textarea id="code" spellcheck="false" aria-label="MiniC source code"></textarea>
   </div>
-
   <div class="pane">
-    <div class="tabs">
+    <div class="tabs" role="tablist">
       <button data-tab="result" class="on">Result</button>
-      <button data-tab="opt">Optimization</button>
-      <button data-tab="tac">TAC diff</button>
+      <button data-tab="model">Why this combo</button>
+      <button data-tab="passes">What the passes did</button>
+      <button data-tab="tac">Code before / after</button>
     </div>
     <div class="tabwrap">
-      <div class="tabview result on" id="v-result">
-        <p class="hint">Write MiniC on the left and press <b>Run</b>. The program is
-        compiled twice with <span class="mono">gcc&nbsp;-O0</span> &mdash; once as-is,
-        once with the pass combo the model recommends &mdash; then timed. MiniC has no
-        I/O, so a program&rsquo;s result is its <span class="mono">return</span> value.</p>
+      <div class="tabview on" id="v-result">
+        <div class="card welcome">
+          <h2>Write MiniC, press Run, watch it get faster.</h2>
+          <p class="hint">Pick an example above or write your own. MiniC is C without pointers or I/O, so a
+            program's result is the number <code>main()</code> returns.</p>
+          <div class="steps">
+            <div><b>1 · The model reads your code</b>27 features: loops, branches, repeated work…</div>
+            <div><b>2 · It picks the passes</b>predicting the speedup of all 64 combinations</div>
+            <div><b>3 · We prove it on the clock</b>both builds compiled with gcc -O0 and timed</div>
+          </div>
+          <p class="hint" id="model-note" style="margin-top:14px"></p>
+        </div>
       </div>
-      <div class="tabview" id="v-opt"><p class="hint">Run a program to see the recommended passes, what each one changed, and the static features the model read.</p></div>
-      <div class="tabview" id="v-tac"><p class="hint">Run a program to see its three-address code before and after optimization.</p></div>
+      <div class="tabview" id="v-model"><p class="hint">Run a program to see the model's prediction for every combination.</p></div>
+      <div class="tabview" id="v-passes"><p class="hint">Run a program to see what each optimization pass changed.</p></div>
+      <div class="tabview" id="v-tac"><p class="hint">Run a program to compare its three-address code before and after.</p></div>
     </div>
   </div>
 </main>
+<div id="tip"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
 <script>
-const $ = s => document.querySelector(s);
-let cm = null, EXAMPLES = {};
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fx = (v, d = 2) => "×" + Number(v).toFixed(d);
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const PASSES = [["CF", 1, "Constant folding"], ["DCE", 2, "Dead code"], ["CSE", 4, "Common subexpr."],
+                ["LICM", 8, "Loop-invariant"], ["SR", 16, "Strength red."], ["LU", 32, "Loop unrolling"]];
+const passStr = (c) => PASSES.filter(([, b]) => c & b).map(([a]) => a).join(" + ") || "no passes";
+let cm = null, EXAMPLES = {}, last = null;
 
-// theme
+// ---------------------------------------------------------------- theme
 const root = document.documentElement;
-try{ const t = localStorage.getItem("minic-theme"); if(t) root.dataset.theme = t; }catch(e){}
+try { const t = localStorage.getItem("minic-theme"); if (t) root.dataset.theme = t; } catch {}
 $("#theme").onclick = () => {
-  const cur = root.dataset.theme || (matchMedia("(prefers-color-scheme:dark)").matches ? "dark":"light");
-  const next = cur === "dark" ? "light" : "dark";
-  root.dataset.theme = next;
-  try{ localStorage.setItem("minic-theme", next); }catch(e){}
-  if(cm) cm.refresh();
+  const cur = root.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  root.dataset.theme = cur === "dark" ? "light" : "dark";
+  try { localStorage.setItem("minic-theme", root.dataset.theme); } catch {}
+  if (cm) cm.refresh();
 };
 
+// ---------------------------------------------------------------- editor + examples
 const CUSTOM = "__custom__";
-const CUSTOM_TEMPLATE = `// Custom program. MiniC = C without pointers, malloc, or I/O.
+const CUSTOM_TEMPLATE = `// Your own program. MiniC = C without pointers, malloc or I/O:
 // int / float / char / struct, arrays, while / for, functions, recursion.
-// The program's result is main()'s return value (0-255).
+// The result is what main() returns (keep it 0-255).
 
 int main() {
     int k = 6;
@@ -219,155 +341,418 @@ int main() {
     return ((acc % 251) + 251) % 251;
 }
 `;
-
-let loadingExample = false;
-function setCode(v){ loadingExample = true; if(cm) cm.setValue(v); else $("#code").value = v; loadingExample = false; }
-function getCode(){ return cm ? cm.getValue() : $("#code").value; }
-
-// if the editor no longer matches the selected example, flip the dropdown to Custom
-function syncDropdown(){
-  if(loadingExample) return;
-  const sel = $("#examples"), code = getCode();
-  const match = Object.keys(EXAMPLES).find(k => EXAMPLES[k].trim() === code.trim());
-  sel.value = match || CUSTOM;
+let loading = false;
+const setCode = (v) => { loading = true; cm ? cm.setValue(v) : ($("#code").value = v); loading = false; };
+const getCode = () => (cm ? cm.getValue() : $("#code").value);
+function syncDropdown() {
+  if (loading) return;
+  const match = Object.keys(EXAMPLES).find((k) => EXAMPLES[k].trim() === getCode().trim());
+  $("#examples").value = match || CUSTOM;
 }
-
-if(window.CodeMirror){
-  cm = CodeMirror.fromTextArea($("#code"), {
-    mode:"text/x-csrc", lineNumbers:true, indentUnit:4, tabSize:4,
-    theme:"default", viewportMargin:Infinity
-  });
-  cm.setSize("100%","100%");
+if (window.CodeMirror) {
+  cm = CodeMirror.fromTextArea($("#code"), { mode: "text/x-csrc", lineNumbers: true, indentUnit: 4, tabSize: 4, viewportMargin: Infinity,
+    extraKeys: { "Ctrl-Enter": () => run(), "Cmd-Enter": () => run() } });
+  cm.setSize("100%", "100%");
   cm.on("change", syncDropdown);
 } else {
   $("#code").addEventListener("input", syncDropdown);
 }
+document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); run(); } });
 
-fetch("/api/examples").then(r=>r.json()).then(d=>{
+fetch("/api/examples").then((r) => r.json()).then((d) => {
   EXAMPLES = d.examples;
   const sel = $("#examples");
-  Object.keys(EXAMPLES).forEach(k=>{
-    const o = document.createElement("option"); o.value = k; o.textContent = k; sel.appendChild(o);
-  });
-  const custom = document.createElement("option");
-  custom.value = CUSTOM; custom.textContent = "Custom — write your own";
-  sel.appendChild(custom);
+  for (const k of Object.keys(EXAMPLES)) sel.add(new Option(k, k));
+  sel.add(new Option("Custom: write your own", CUSTOM));
   const first = Object.keys(EXAMPLES)[0];
   setCode(EXAMPLES[first]); sel.value = first;
-  if(!d.model_loaded){
-    $("#v-result").insertAdjacentHTML("beforeend",
-      `<p class="hint" style="color:var(--warn)">No trained model found &mdash; falling back to &ldquo;all passes&rdquo;. Run <span class="mono">python run_experiment.py</span> to train one.</p>`);
-  }
+  $("#model-note").innerHTML = d.model_loaded
+    ? `<span class="muted">Model loaded. It abstains (leaves the code alone) when no combination looks clearly better.</span>`
+    : `<span style="color:var(--orange)">The model couldn't be loaded${d.model_error ? ` (${esc(d.model_error)})` : ""}, so the playground uses all six passes instead.</span>`;
 });
-$("#examples").onchange = e => {
+$("#examples").onchange = (e) => {
   const v = e.target.value;
-  if(v === CUSTOM){
-    // only drop in the template if the editor still holds an unmodified example
-    const onExample = Object.values(EXAMPLES).some(s => s.trim() === getCode().trim());
-    if(onExample || !getCode().trim()) setCode(CUSTOM_TEMPLATE);
-    if(cm) cm.focus();
-  } else {
-    setCode(EXAMPLES[v]);
-  }
+  if (v === CUSTOM) {
+    const onExample = Object.values(EXAMPLES).some((s) => s.trim() === getCode().trim());
+    if (onExample || !getCode().trim()) setCode(CUSTOM_TEMPLATE);
+    cm && cm.focus();
+  } else setCode(EXAMPLES[v]);
 };
 
-// tabs
-document.querySelectorAll(".tabs button").forEach(b=>{
-  b.onclick = () => {
-    document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on", x===b));
-    document.querySelectorAll(".tabview").forEach(v=>v.classList.toggle("on", v.id === "v-"+b.dataset.tab));
-  };
-});
+// ---------------------------------------------------------------- tabs
+function showTab(name) {
+  $(".tabwrap").scrollTop = 0;
+  $$(".tabs button").forEach((x) => x.classList.toggle("on", x.dataset.tab === name));
+  $$(".tabview").forEach((v) => v.classList.toggle("on", v.id === "v-" + name));
+  if (name === "model") requestAnimationFrame(() => $("#v-model .heat")?.classList.add("in"));
+  if (name === "passes") requestAnimationFrame(() => $$("#v-passes [data-w]").forEach((s) => (s.style.width = s.dataset.w)));
+}
+$$(".tabs button").forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
 
-const fmt = n => n==null ? "&mdash;" : (n).toFixed(2);
+// ---------------------------------------------------------------- tooltip
+const tip = $("#tip");
+function showTip(html, ev) {
+  tip.innerHTML = html; tip.classList.add("on");
+  let x = ev.clientX + 14, y = ev.clientY - tip.offsetHeight - 12;
+  if (x + tip.offsetWidth > innerWidth - 8) x = ev.clientX - tip.offsetWidth - 14;
+  if (y < 8) y = ev.clientY + 14;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+const hideTip = () => tip.classList.remove("on");
 
-$("#run").onclick = async () => {
+// ---------------------------------------------------------------- run
+const STAGES = [["Parse", "lex, parse, check types"], ["Predict", "27 features → model"], ["Optimize", "apply the passes"],
+                ["Compile", "C → gcc -O0 / -O2"], ["Time", "run each build"]];
+async function run() {
   const btn = $("#run");
-  btn.disabled = true; btn.classList.add("busy"); btn.querySelector(".lbl").textContent = "Running";
-  $("#v-result").innerHTML = `<p class="hint">Compiling &amp; timing &mdash; this runs real binaries, give it a few seconds&hellip;</p>`;
-  try{
-    const r = await fetch("/api/compile", {
-      method:"POST", headers:{"content-type":"application/json"},
-      body: JSON.stringify({ source:getCode(), runs: +$("#runs").value })
-    });
+  if (btn.disabled) return;
+  btn.disabled = true; btn.classList.add("busy"); $(".lbl", btn).textContent = "Running";
+  showTab("result");
+  $("#v-result").innerHTML = `<div class="card"><div class="h">working on it</div><div class="stages">${
+    STAGES.map(([t, s]) => `<div class="stg"><span>${t}</span><small>${s}</small></div>`).join("")}</div>
+    <p class="hint" style="margin-top:12px">Real binaries are compiled and run ${$("#runs").value} times each, so this takes a few seconds.</p></div>`;
+  // the server does everything in one request: walk the stage tracker on a timer, finish it on reply
+  const stg = $$("#v-result .stg");
+  let k = 0;
+  const step = () => { stg.forEach((s, i) => { s.classList.toggle("done", i < k); s.classList.toggle("active", i === k); }); };
+  step();
+  const timer = setInterval(() => { if (k < stg.length - 1) { k++; step(); } }, 650);
+  try {
+    const r = await fetch("/api/compile", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: getCode(), runs: +$("#runs").value }) });
     const d = await r.json();
+    clearInterval(timer); k = stg.length; step();
+    await new Promise((res) => setTimeout(res, reduced ? 0 : 250));
     render(d);
-  }catch(err){
-    $("#v-result").innerHTML = `<div class="err">request failed: ${err}</div>`;
-  }finally{
-    btn.disabled = false; btn.classList.remove("busy"); btn.querySelector(".lbl").innerHTML = "Run &#9654;";
+  } catch (err) {
+    clearInterval(timer);
+    $("#v-result").innerHTML = `<div class="err">Request failed: ${esc(err)}. Is the playground server still running?</div>`;
+  } finally {
+    btn.disabled = false; btn.classList.remove("busy"); $(".lbl", btn).textContent = "Run ▶";
   }
-};
+}
+$("#run").onclick = run;
 
-function render(d){
-  if(!d.ok){
-    $("#v-result").innerHTML = `<h3>${d.stage||"error"}</h3><div class="err">${esc(d.error||"unknown error")}</div>`;
-    document.querySelector('.tabs button[data-tab=result]').click();
+// ---------------------------------------------------------------- render
+function countUp(el, target, d = 2) {
+  if (reduced) { el.textContent = fx(target, d); return; }
+  const t0 = performance.now(), dur = 1100;
+  const tick = (now) => { const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+    el.textContent = fx(1 + (target - 1) * e, d); if (p < 1) requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+}
+
+function render(d) {
+  last = d;
+  if (!d.ok) {
+    $("#v-result").innerHTML = `<div class="card"><div class="h">${esc(d.stage || "error")}</div><div class="err">${esc(d.error || "unknown error")}</div>
+      <p class="hint" style="margin-top:10px">Fix the code on the left and press Run again.</p></div>`;
+    ["model", "passes", "tac"].forEach((t) => ($("#v-" + t).innerHTML = `<p class="hint">The program didn't compile, so there's nothing to show yet.</p>`));
     return;
   }
+  renderResult(d); renderModel(d); renderPasses(d); renderTac(d);
+}
+
+function renderResult(d) {
   const b = d.baseline, o = d.optimized, o2 = d.o2;
-  const speed = d.speedup, o2speed = d.o2_speedup;
-  const worst = Math.max(b.median_ms, o.ok?o.median_ms:0, o2.ok?o2.median_ms:0);
-  const bar = (ms, cls) => `<div class="bartrack"><div class="barfill ${cls}" style="width:${Math.max(2, 100*ms/worst)}%"></div></div>`;
+  const sp = d.speedup || 1;
+  const cls = d.abstained ? "flat" : sp < 0.98 ? "slow" : "";
+  let verdict;
+  if (d.abstained) verdict = `The model predicted no combination would beat ×${d.abstain_margin}, so it left the program alone. There's little here for the passes to remove.`;
+  else if (sp >= 1.02) verdict = `The optimized build runs <b>${fx(sp)}</b> faster than the unoptimized one` +
+    // only compare with gcc -O2 when -O2 itself clearly helped; otherwise it's timing noise
+    (d.o2_speedup >= 1.05 ? (sp >= d.o2_speedup ? `, and even beats <code>gcc -O2</code> (${fx(d.o2_speedup)}).`
+                                                 : `. For reference, <code>gcc -O2</code> reaches ${fx(d.o2_speedup)}.`) : ".");
+  else if (sp < 0.98) verdict = `This combination made the program <b>slower</b>. Passes don't always help, which is exactly why choosing them is hard.`;
+  else verdict = `No measurable difference: the passes found little to improve.`;
+
+  const saved = o.ok ? Math.max(0, 1 - o.median_ms / b.median_ms) : 0;      // share of run time removed
+  const msSaved = o.ok ? b.median_ms - o.median_ms : 0;
+  const R = 52, C = 2 * Math.PI * R;
+
+  const builds = [["No passes", "gcc -O0", b, "var(--none)"], ["Recommended passes", "gcc -O0", o, "var(--green)"], ["gcc's own optimizer", "gcc -O2, for reference", o2, "var(--blue)"]]
+    .filter(([, , r]) => r && r.ok);
+  const slowest = Math.max(...builds.map(([, , r]) => r.median_ms));
+  const allSamples = builds.flatMap(([, , r]) => r.samples_ms || [r.median_ms]);
+  const lo = Math.min(...allSamples) * 0.97, hi = Math.max(...allSamples) * 1.03;
+  const pos = (v) => ((v - lo) / (hi - lo)) * 100;
+  const raceDur = 2.4;
+
+  // prediction vs reality
+  const pred = d.predicted_speedup;
+  const meterMax = Math.max(sp, pred || 1, 1.05) * 1.08;
+  const pw = (v) => `${(v / meterMax) * 100}%`;
+  const err = pred ? Math.abs(sp - pred) / sp : null;
+
+  const nb = d.n_instr_before, na = d.n_instr_after, nmax = Math.max(nb, na, 1);
 
   $("#v-result").innerHTML = `
-    <div class="big tnum">${d.abstained
-      ? `no change<small> &mdash; model left it alone</small>`
-      : `&times;${speed? speed.toFixed(2): "?"}<small> vs unoptimized</small>`}</div>
-    <div class="sub">${d.model_loaded
-      ? `model picked combo <b>${d.combo}</b> &mdash; ${d.passes.length? d.pass_abbrs.join(" + ") : "no passes"}`
-      : `combo ${d.combo} (all passes &mdash; no model loaded)`}${
-        d.predicted_speedup? ` &nbsp;&middot;&nbsp; predicted &times;${d.predicted_speedup.toFixed(2)}`:""}</div>
-    ${d.abstained? `<p class="hint" style="color:var(--ink-faint);margin-top:6px">No combo cleared the model&rsquo;s &times;${d.abstain_margin} confidence margin, so it compiles the program as-is.</p>`:""}
-    <div class="rv">return value = ${d.return_value}
-      ${d.outputs_match ? '<span class="ok">&#10003; both builds agree</span>' : '<span class="no">&#10007; MISMATCH</span>'}</div>
-    <div class="bars">
-      <div class="barrow"><span class="lab">baseline -O0</span>${bar(b.median_ms,"b0")}<span class="v">${fmt(b.median_ms)} ms</span></div>
-      <div class="barrow"><span class="lab">optimized -O0</span>${o.ok? bar(o.median_ms,"b1"): "<span>&mdash;</span>"}<span class="v">${o.ok? fmt(o.median_ms)+" ms":"&mdash;"}</span></div>
-      <div class="barrow"><span class="lab">gcc -O2 (ref)</span>${o2.ok? bar(o2.median_ms,"b2"): "<span>&mdash;</span>"}<span class="v">${o2.ok? fmt(o2.median_ms)+" ms":"&mdash;"}</span></div>
+    <div class="card reveal-in">
+      <div class="hero">
+        <div>
+          <div class="big ${cls}" id="bigv">${d.abstained ? "left as-is" : "×1.00"}</div>
+          <div class="big-sub">${o.ok ? `${b.median_ms.toFixed(1)} ms → ${o.median_ms.toFixed(1)} ms per run` : ""}</div>
+          <div class="verdict">${verdict}</div>
+          <div style="margin-top:12px">${d.outputs_match ? `<span class="badge">✓ both builds return ${d.return_value}</span>` : `<span class="badge bad">✗ results differ!</span>`}</div>
+        </div>
+        <div class="ring" title="${msSaved.toFixed(1)} ms saved per run">
+          <svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="${R}" fill="none" stroke-width="10"/>
+            <circle class="fg" id="ringfg" cx="60" cy="60" r="${R}" fill="none" stroke-width="10" stroke-dasharray="${C}" stroke-dashoffset="${C}"/></svg>
+          <div class="lbl"><div><b id="ringv">0%</b><small>time saved</small></div></div>
+        </div>
+      </div>
     </div>
-    <p class="hint" style="margin-top:20px">
-      ${d.abstained
-        ? `The model read the program&rsquo;s features and predicted no combo would clear its
-           confidence margin, so it recommends compiling as-is. On this kind of code
-           (deep recursion, little loop work) the passes have almost nothing to remove.`
-        : `Our source-level optimizer at <span class="mono">-O0</span> is
-           <b>&times;${speed? speed.toFixed(2):"?"}</b> over doing nothing` + (
-        (speed && o2speed)
-          ? (speed >= o2speed
-              ? ` &mdash; the optimized <span class="mono">-O0</span> build even beats <span class="mono">gcc -O2</span> here`
-              : (o2speed > 1.02
-                  ? `, closing <b>${Math.round(100*(speed-1)/(o2speed-1))}%</b> of the gap to <span class="mono">gcc -O2</span>`
-                  : ``))
-          : ``) + `, with the C compiler doing no optimizing of its own.`}
-      &nbsp;<span style="color:var(--ink-faint)">(${d.elapsed_s}s, ${$("#runs").value} runs each)</span>
-    </p>`;
 
-  // optimization tab
-  const chips = [["CF",1],["DCE",2],["CSE",4],["LICM",8],["SR",16],["LU",32]]
-    .map(([ab,bit]) => `<span class="chip ${d.combo&bit?"on":""}">${ab}</span>`).join("");
-  const act = (d.activity||[]).map(a => `<tr>
-      <td class="${a.enabled?"on":"off"}">${a.pass}</td>
-      <td class="${a.enabled?"":"off"}">${a.enabled?"on":"off"}</td>
-      <td class="n">${a.enabled? (a.delta>0?"+":"")+a.delta : "&mdash;"}</td>
-      <td class="n">${a.enabled? (a.annotated||0) : "&mdash;"}</td></tr>`).join("");
-  const feats = Object.entries(d.features).map(([k,v]) =>
-      `<div><span>${k}</span><span>${(+v).toString()}</span></div>`).join("");
-  $("#v-opt").innerHTML = `
-    <section><h3>recommended combo &mdash; ${d.combo}</h3><div class="chips">${chips}</div></section>
-    <section><h3>what each pass did (run individually)</h3>
-      <table><thead><tr><th>pass</th><th>state</th><th>&Delta; instrs</th><th>rewrites</th></tr></thead>
-      <tbody>${act}</tbody></table>
-      <p class="hint" style="font-size:11.5px;margin-top:6px">&Delta; instrs = change in TAC instruction count; rewrites = instructions the pass tagged (CSE copies, hoists, reductions, unroll guards).</p></section>
-    <section><h3>static features the model read (19)</h3><div class="feat-grid">${feats}</div></section>`;
+    <div class="card reveal-in" style="animation-delay:.08s">
+      <div class="h"><span>passes the model switched on · combo ${d.combo}</span><span>${d.model_loaded ? "" : "fallback"}</span></div>
+      <div class="switches">${PASSES.map(([ab, bit, nm]) => `<div class="sw" data-bit="${bit}"><div class="led"></div><b>${ab}</b><small>${nm}</small></div>`).join("")}</div>
+    </div>
 
-  // tac diff
-  $("#v-tac").innerHTML = `<div class="diff">
-    <div><div class="cap">before &mdash; combo 0</div><pre>${esc(d.tac_before)}</pre></div>
-    <div><div class="cap">after &mdash; combo ${d.combo}</div><pre>${esc(d.tac_after)}</pre></div>
-  </div>`;
+    <div class="card reveal-in" style="animation-delay:.16s">
+      <div class="h"><span>the race · median run time</span><span>${d.elapsed_s}s total</span></div>
+      <div class="race">${builds.map(([nm, sub, r, col]) => `
+        <div class="lane">
+          <div class="top"><span><b>${nm}</b> <span class="muted">· ${sub}</span></span><span class="t">${r.median_ms.toFixed(2)} ms</span></div>
+          <div class="track"><div class="fill" style="background:${col};--w:${(100 * r.median_ms) / slowest}%;--dur:${(raceDur * r.median_ms) / slowest}s"></div><span class="flag">done</span></div>
+        </div>`).join("")}</div>
+      <div class="race-note">Bars fill at the speed each build actually runs: the faster build finishes first.</div>
+    </div>
+
+    <div class="duo">
+      <div class="card reveal-in" style="animation-delay:.24s">
+        <div class="h"><span>prediction vs. reality</span></div>
+        ${pred ? `<div class="meter">
+            <div class="row"><span class="muted">predicted</span><div class="tr"><i style="background:var(--purple)" data-w="${pw(pred)}"></i></div><span>${fx(pred)}</span></div>
+            <div class="row"><span class="muted">measured</span><div class="tr"><i style="background:var(--green)" data-w="${pw(sp)}"></i></div><span>${fx(sp)}</span></div>
+          </div>
+          <div class="big-sub">${err < 0.05 ? "Within 5% of the real speedup." : `Off by ${Math.round(err * 100)}%. Timing on a busy machine is noisy, and the model only sees code features.`}</div>`
+        : `<p class="hint">No model loaded, so there's no prediction to compare.</p>`}
+      </div>
+      <div class="card reveal-in" style="animation-delay:.3s">
+        <div class="h"><span>code size · TAC instructions</span></div>
+        <div class="meter">
+          <div class="row"><span class="muted">before</span><div class="tr"><i style="background:var(--none)" data-w="${(nb / nmax) * 100}%"></i></div><span>${nb}</span></div>
+          <div class="row"><span class="muted">after</span><div class="tr"><i style="background:${na > nb ? "var(--orange)" : "var(--green)"}" data-w="${(na / nmax) * 100}%"></i></div><span>${na}</span></div>
+        </div>
+        <div class="big-sub">${na > nb ? "Bigger: unrolling copies the loop body, but runs the loop test less often." : na < nb ? `${nb - na} fewer instructions to execute.` : "Same size."}</div>
+      </div>
+    </div>
+
+    <div class="card reveal-in" style="animation-delay:.36s">
+      <div class="h"><span>every timed run</span><span>dots = runs · line = median</span></div>
+      ${builds.map(([nm, , r, col]) => `<div class="muted" style="font-size:12px;margin-top:6px">${nm}</div>
+        <div class="strip">${(r.samples_ms || [r.median_ms]).map((v) => `<i style="left:${pos(v)}%;background:${col}" title="${v} ms"></i>`).join("")}
+        <span class="med" style="left:${pos(r.median_ms)}%;background:${col}"></span></div>`).join("")}
+      <div class="axis"><span>${lo.toFixed(1)} ms</span><span>${((lo + hi) / 2).toFixed(1)} ms</span><span>${hi.toFixed(1)} ms</span></div>
+    </div>`;
+
+  if (!d.abstained) countUp($("#bigv"), sp);
+  // ring gauge + its counter
+  requestAnimationFrame(() => requestAnimationFrame(() => { $("#ringfg").style.strokeDashoffset = C * (1 - saved); }));
+  const rv = $("#ringv"), t0 = performance.now();
+  const tick = (now) => {
+    const p = reduced ? 1 : Math.min(1, (now - t0) / 1400), e = 1 - Math.pow(1 - p, 3);
+    rv.textContent = Math.round(saved * 100 * e) + "%";
+    if (p < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  // pass switches one by one
+  $$("#v-result .sw").forEach((s, i) => setTimeout(() => s.classList.toggle("on", !!(d.combo & +s.dataset.bit)), reduced ? 0 : 200 + i * 110));
+  // the race
+  requestAnimationFrame(() => $$("#v-result .fill").forEach((f) => {
+    f.classList.add("go");
+    const dur = parseFloat(getComputedStyle(f).getPropertyValue("--dur")) * 1000;
+    setTimeout(() => f.parentElement.querySelector(".flag").classList.add("show"), reduced ? 0 : dur);
+  }));
+  // meters + run dots
+  setTimeout(() => $$("#v-result .meter i").forEach((i) => (i.style.width = i.dataset.w)), reduced ? 0 : 350);
+  $$("#v-result .strip i").forEach((dot, i) => setTimeout(() => dot.classList.add("in"), reduced ? 0 : 450 + i * 25));
 }
-function esc(s){ return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+function heatColor(v, lo, hi) {
+  if (Math.abs(v - 1) < 0.005) return "var(--surface-3)";
+  if (v < 1) { const t = Math.min(1, (1 - v) / Math.max(0.001, 1 - lo)); return `color-mix(in srgb, var(--orange) ${30 + 60 * t}%, var(--surface-2))`; }
+  const t = (v - 1) / Math.max(0.001, hi - 1);
+  return `color-mix(in srgb, var(--green-2) ${15 + 85 * t}%, var(--surface-2))`;
+}
+
+function renderModel(d) {
+  const P = d.predictions;
+  if (!P) { $("#v-model").innerHTML = `<div class="card"><p class="hint">No model is loaded, so the playground used all six passes. Restart it with <code>python minic.py playground</code> to train one (about 15 s).</p></div>`; return; }
+  const lo = Math.min(...P), hi = Math.max(...P);
+  const pips = (bits) => `<span class="pips">${[0, 1, 2].map((k) => `<b class="${bits & (1 << k) ? "on" : ""}"></b>`).join("")}</span>`;
+  const colNames = ["none", "LICM", "SR", "LICM SR", "LU", "LICM LU", "SR LU", "all 3"];
+  const rowNames = ["none", "CF", "DCE", "CF DCE", "CSE", "CF CSE", "DCE CSE", "all 3"];
+  let grid = `<div class="rl"></div>` + colNames.map((n, c) => `<div class="cl">${pips(c)}<span>${n}</span></div>`).join("");
+  for (let r = 0; r < 8; r++) {
+    grid += `<div class="rl">${pips(r)}<span>${rowNames[r]}</span></div>`;
+    for (let c = 0; c < 8; c++) {
+      const combo = r | (c << 3), v = P[combo];
+      grid += `<div class="cell ${combo === d.combo ? "pick" : ""} ${combo === 63 ? "all" : ""}" data-c="${combo}"
+        style="background:${heatColor(v, lo, hi)};transition-delay:${reduced ? 0 : (r + c) * 35}ms">${v.toFixed(2)}</div>`;
+    }
+  }
+  const ranked = P.map((v, c) => [c, v]).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  // detected features (non-zero) first, then the ones this program doesn't have
+  const feats = Object.entries(d.features).sort((x, y) => (+y[1] !== 0) - (+x[1] !== 0));
+  const nHot = feats.filter(([, v]) => +v !== 0).length;
+  const featHtml = ([k, v]) => `<div class="${+v ? "hot" : ""}" title="${esc(k)}"><span>${esc(k.replace(/^opp_/, "opportunity: ").replace(/_/g, " "))}</span><span>${+v === Math.round(+v) ? +v : (+v).toFixed(3)}</span></div>`;
+  $("#v-model").innerHTML = `
+    <div class="card">
+      <div class="h"><span>predicted speedup of all 64 combinations</span><span>${d.abstained ? "abstained" : "pick: combo " + d.combo}</span></div>
+      <p class="hint" style="margin-top:-4px">Rows switch CF / DCE / CSE, columns switch LICM / SR / LU. The model never runs the program: these
+        are predictions from its features alone.${d.abstain_margin ? ` It only acts if the best prediction reaches <b>×${d.abstain_margin}</b>.` : ""}</p>
+      <div class="heat">${grid}</div>
+      <div class="legend"><span><i style="outline:2px solid var(--ink);outline-offset:-2px"></i>model's pick</span>
+        <span><i style="box-shadow:inset 0 0 0 2px var(--blue)"></i>all 6 passes</span>
+        <span><i style="background:${heatColor(hi, lo, hi)}"></i>predicted faster</span><span><i style="background:${heatColor(Math.min(lo, 0.97), lo, hi)}"></i>predicted slower</span></div>
+    </div>
+    <div class="card">
+      <div class="h"><span>top 5 predictions</span></div>
+      <div class="top5">${ranked.map(([c, v]) => `<div class="r"><span class="mono">combo ${c}</span>
+        <div class="bar"><span data-w="${Math.max(4, ((v - Math.min(1, lo)) / (hi - Math.min(1, lo))) * 100)}%"></span></div>
+        <span class="mono" style="text-align:right">${fx(v, 3)}</span></div><div class="muted" style="font-size:12px;margin:-4px 0 4px 80px">${passStr(c)}</div>`).join("")}</div>
+    </div>
+    <div class="card">
+      <div class="h"><span>what the model read · ${feats.length} features</span><span>${nHot} detected</span></div>
+      <div class="feat">${feats.slice(0, nHot).map(featHtml).join("")}</div>
+      ${nHot < feats.length ? `<div class="sechead">not present in this program · ${feats.length - nHot}</div>
+      <div class="feat">${feats.slice(nHot).map(featHtml).join("")}</div>` : ""}
+    </div>`;
+  $$("#v-model .cell").forEach((cell) => {
+    const c = +cell.dataset.c;
+    cell.onmousemove = (ev) => showTip(`<b>combo ${c}</b>: ${passStr(c)}<br>predicted ${fx(P[c], 3)}${c === d.combo ? "<br><b>← the model's pick</b>" : ""}`, ev);
+    cell.onmouseleave = hideTip;
+  });
+  $$("#v-model .top5 [data-w]").forEach((s) => setTimeout(() => (s.style.width = s.dataset.w), 50));
+  if ($("#v-model").classList.contains("on")) $("#v-model .heat").classList.add("in");
+}
+
+function renderPasses(d) {
+  const desc = { "Constant Folding": "compute known values early", "Common Subexpr. Elim.": "reuse repeated expressions",
+    "Loop Unrolling": "4 iterations per loop test", "Loop-Invariant Code Motion": "lift unchanging work out of loops",
+    "Strength Reduction": "cheaper operations in loops", "Dead Code Elimination": "delete unused results" };
+  const acts = d.activity || [];
+  // passes that changed something first, then ones that ran without effect, then the switched-off ones
+  const changed = acts.filter((a) => a.enabled && (a.delta || a.annotated));
+  const idle = acts.filter((a) => a.enabled && !a.delta && !a.annotated);
+  const off = acts.filter((a) => !a.enabled);
+  const maxAbs = Math.max(1, ...acts.map((a) => Math.abs(a.delta)));
+  const row = (a) => {
+    const w = (Math.abs(a.delta) / maxAbs) * 50;
+    const side = a.delta < 0 ? `right:50%;background:var(--green)` : `left:50%;background:var(--orange)`;
+    const val = a.enabled ? (a.delta > 0 ? "+" : "") + a.delta : "–";
+    return `<div class="prow ${a.enabled ? "" : "off"}">
+      <div class="nm">${a.pass}<small>${a.enabled ? desc[a.pass] || "" : "switched off"}</small></div>
+      <div class="dbar"><span class="mid"></span>${a.enabled && a.delta ? `<span style="${side}" data-w="${w}%"></span>` : ""}</div>
+      <div class="v">${val}${a.annotated ? `<br><span class="muted" style="font-weight:400">${a.annotated} rewrite${a.annotated === 1 ? "" : "s"}</span>` : ""}</div></div>`;
+  };
+  const group = (title, list) => (list.length ? `<div class="sechead">${title} · ${list.length}</div>${list.map(row).join("")}` : "");
+  $("#v-passes").innerHTML = `<div class="card">
+    <div class="h"><span>what each pass did</span><span>change in instruction count</span></div>
+    ${changed.length ? "" : `<p class="hint" style="margin:0 0 6px">None of the enabled passes found anything to change in this program.</p>`}
+    ${group("changed the code", changed)}
+    ${group("ran, nothing to change", idle)}
+    ${group("switched off", off)}
+    <p class="hint" style="font-size:12.5px;margin:14px 0 0"><span style="color:var(--green)">Green</span> = fewer instructions,
+      <span style="color:var(--orange)">orange</span> = more (unrolling copies the loop body on purpose). A rewrite is an instruction changed in place.</p>
+  </div>`;
+  if ($("#v-passes").classList.contains("on")) showTab("passes");
+}
+
+// ---- line diff (LCS) -> GitHub-style unified hunks ----
+function lineDiff(a, b) {
+  const n = a.length, m = b.length;
+  const L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const ops = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { ops.push({ t: " ", a: i + 1, b: j + 1, s: a[i] }); i++; j++; }
+    else if (L[i + 1][j] >= L[i][j + 1]) { ops.push({ t: "-", a: i + 1, s: a[i] }); i++; }
+    else { ops.push({ t: "+", b: j + 1, s: b[j] }); j++; }
+  }
+  while (i < n) { ops.push({ t: "-", a: i + 1, s: a[i] }); i++; }
+  while (j < m) { ops.push({ t: "+", b: j + 1, s: b[j] }); j++; }
+  return ops;
+}
+
+function splitFuncs(text) {
+  // "func name(...) -> T:" starts a function; returns [[name, lines], ...] in order
+  const out = [];
+  for (const line of text.replace(/\n+$/, "").split("\n")) {
+    const m = line.match(/^func\s+(\w+)/);
+    if (m) out.push([m[1], [line]]);
+    else if (out.length) out[out.length - 1][1].push(line);
+  }
+  return out.map(([n, ls]) => { while (ls.length && !ls[ls.length - 1].trim()) ls.pop(); return [n, ls]; });
+}
+
+function renderTac(d) {
+  const before = splitFuncs(d.tac_before), after = Object.fromEntries(splitFuncs(d.tac_after));
+  const funcs = before.map(([name, lines]) => {
+    const ops = lineDiff(lines, after[name] || []);
+    return { name, ops, adds: ops.filter((o) => o.t === "+").length, dels: ops.filter((o) => o.t === "-").length };
+  });
+  const adds = funcs.reduce((s, f) => s + f.adds, 0), dels = funcs.reduce((s, f) => s + f.dels, 0);
+  const total = Math.max(1, adds + dels), nA = Math.round((adds / total) * 5);
+  const blocks = Array.from({ length: 5 }, (_, k) => `<i class="${adds + dels === 0 ? "" : k < nA ? "a" : "d"}"></i>`).join("");
+  const changed = funcs.filter((f) => f.adds || f.dels), same = funcs.filter((f) => !f.adds && !f.dels);
+  let html = `<div class="dstat"><span class="add">+${adds}</span><span class="del">−${dels}</span><span class="dblocks">${blocks}</span>
+    <span class="muted" style="font-size:12.5px">${changed.length} of ${funcs.length} function${funcs.length === 1 ? "" : "s"} changed · ${d.n_instr_before} → ${d.n_instr_after} instructions · no passes → combo ${d.combo}</span></div>`;
+  if (!changed.length) {
+    $("#v-tac").innerHTML = html + `<div class="dfile"><div class="nochange"><b>No changes</b>The selected passes left this program's code exactly as it was.</div></div>`;
+    return;
+  }
+  const CONTEXT = 3, folds = {};
+  let foldId = 0;
+  const lineHtml = (o) => {
+    const t = esc(o.s || " ");
+    const txt = /^\S.*:$/.test(o.s) ? `<span class="lab">${t}</span>` : t;
+    const cls = o.t === "+" ? "add" : o.t === "-" ? "del" : "";
+    return `<tr class="${cls}"><td class="ln">${o.a || ""}</td><td class="ln">${o.b || ""}</td><td class="sg">${o.t === " " ? "" : o.t === "-" ? "−" : "+"}</td><td>${txt}</td></tr>`;
+  };
+  const fold = (rows, label) => {
+    const id = "f" + foldId++;
+    folds[id] = rows;
+    return `<tr class="fold" data-fold="${id}"><td colspan="4">⋯ ${label}</td></tr>`;
+  };
+  const card = (f) => {
+    const ops = f.ops, isCh = ops.map((o) => o.t !== " ");
+    const near = ops.map((_, k) => { for (let q = Math.max(0, k - CONTEXT); q <= Math.min(ops.length - 1, k + CONTEXT); q++) if (isCh[q]) return true; return false; });
+    let body = "", k = 0;
+    while (k < ops.length) {
+      let e = k;
+      if (near[k]) {
+        while (e < ops.length && near[e]) e++;
+        const seg = ops.slice(k, e);
+        const aS = seg.find((o) => o.a)?.a || 0, bS = seg.find((o) => o.b)?.b || 0;
+        body += `<tr class="hunk"><td colspan="4">@@ −${aS},${seg.filter((o) => o.t !== "+").length} +${bS},${seg.filter((o) => o.t !== "-").length} @@</td></tr>` + seg.map(lineHtml).join("");
+      } else {
+        while (e < ops.length && !near[e]) e++;
+        body += fold(ops.slice(k, e), `show ${e - k} unchanged line${e - k === 1 ? "" : "s"}`);
+      }
+      k = e;
+    }
+    return `<div class="dfile"><div class="fh"><span>func ${esc(f.name)}</span><span><span style="color:var(--green)">+${f.adds}</span> <span style="color:var(--red)">−${f.dels}</span></span></div>
+      <div class="dwrap"><table class="dtable"><tbody>${body}</tbody></table></div></div>`;
+  };
+  html += changed.map(card).join("");
+  if (same.length) {
+    html += `<div class="sechead">unchanged · ${same.length} function${same.length === 1 ? "" : "s"}</div>` + same.map((f) =>
+      `<div class="dfile"><div class="fh"><span>func ${esc(f.name)}</span><span class="muted">no changes · ${f.ops.length} lines</span></div>
+       <div class="dwrap"><table class="dtable"><tbody>${fold(f.ops, `show ${f.ops.length} lines`)}</tbody></table></div></div>`).join("");
+  }
+  html += `<p class="hint" style="font-size:12.5px;margin-top:6px"><span style="color:var(--green)">+</span> lines were added by the passes,
+    <span style="color:var(--red)">−</span> lines removed. Unchanged code is folded: click a folded row to expand it.</p>`;
+  $("#v-tac").innerHTML = html;
+  $("#v-tac").onclick = (ev) => {
+    const tr = ev.target.closest("tr.fold");
+    if (tr) tr.outerHTML = folds[tr.dataset.fold].map(lineHtml).join("");
+  };
+}
 </script>
 </body>
 </html>

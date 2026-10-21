@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+### Usability + fixes (fresh-clone audit)
+- **`minic.py`**: one entry point for everything (`check`, `compile`, `recommend`,
+  `benchmark`, `playground`, `results`, `analyze`, `experiment`, `test`). The old
+  `python -m ...` commands still work.
+- **Model on a fresh clone**: the trained model was never committed (a 640 MB random
+  forest), so `recommend` and the playground silently fell back to "all passes".
+  They now train a 2 MB HistGradientBoosting model on first use (~15 s), and
+  retrain if the saved model came from another scikit-learn version. The strategy
+  bake-off treats speedups within 0.01x as a tie and prefers the smaller model.
+- **Fixed: loop unrolling ran twice with LICM.** LICM's pre-header between the unroll
+  guard and the remainder loop hid that the remainder was already unrolled, so the
+  next fixpoint round unrolled it again (dead, but doubled code size). Regression test
+  added. The committed dataset predates this fix; runtime impact is negligible since
+  the duplicate never executed.
+- **Fixed: compiler output wasn't deterministic.** Loop unrolling numbered its fresh
+  temporaries while iterating a `set`, so the emitted code (not its behavior) changed
+  with Python's per-process hash seed. Now numbered in program order; a test compiles
+  under three hash seeds and requires identical output.
+- **Fixed: missing gcc crashed with a traceback**; it now explains how to install gcc.
+- **Fixed: every CLI/playground compile leaked an empty temp folder.**
+- **Fixed: `--optimize 99` silently ran combo 35**; combos outside 0-63 are rejected.
+  The driver's `--run` now uses the harness's gcc flags (`-std=c99`).
+- **Fixed: `recommend FILE --runs N` was rejected** (timing options only worked before
+  the subcommand). Clean errors for missing files and syntax errors.
+- `torch` moved to `requirements-models.txt` (only the CNN/GRU bake-off needs it);
+  its test is skipped without it. A noisy scikit-learn/joblib warning is silenced.
+- **New results page** (`docs/results.html`, built by `python minic.py results` from
+  `docs/results_template.html`): animated charts of all 64 combos, every program,
+  program families, pass effects and interactions, and an honest strategy
+  comparison. Numbers now match RESULTS.md exactly (it previously showed x1.30).
+- README rewritten: plain-language explanation, Mermaid flowcharts, one command table.
+- **Playground redesigned** (`demo/static/index.html`): stage tracker while it runs; a
+  time-saved ring, pass switches, a "race" of the builds at their real relative speeds,
+  every timed run, predicted-vs-measured and code-size meters; the model's predictions
+  for all 64 combos as a heatmap; detected features listed before absent ones; passes
+  grouped by whether they changed anything; a GitHub-style unified diff, per function,
+  changed functions first and unchanged code folded. The API now also returns all 64
+  predictions, every timing sample and instruction counts.
+- Fixed: `minic.py playground` ignored the `PORT` environment variable. Missing
+  packages now print how to activate `.venv` or install requirements instead of a
+  traceback.
+
 ### 900-program results + model comparison
 - Corpus expanded to 900 programs (30 hand-written + 870 generated, now committed,
   with branch / nested-loop / linear-recursion patterns); full 64-combo sweep =

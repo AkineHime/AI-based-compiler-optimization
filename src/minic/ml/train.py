@@ -213,9 +213,14 @@ def choose_strategy(csv_path: str, n_splits: int = 5) -> dict:
     REGRESS_CAP = 0.10
     safe = [t for t in table if t["regression_rate"] <= REGRESS_CAP]
     pool = safe or table
-    ranked = sorted(pool, key=lambda t: (-round(t["reco_speedup_mean"], 3),
-                                         -round(t["capture"], 3),
-                                         t["regression_rate"]))
+    # Speedups closer than 0.01x are within timing noise, so treat them as a tie and
+    # prefer the much smaller model (a random forest pickles to ~600 MB,
+    # HistGradientBoosting to ~2 MB), then fewer regressions.
+    size_rank = {"hist_gradient_boosting": 0, "hgb_clf": 0}
+    ranked = sorted(pool, key=lambda t: (-round(t["reco_speedup_mean"], 2),
+                                         size_rank.get(t["kind"], 1),
+                                         t["regression_rate"],
+                                         -t["capture"]))
     best_reg = min(regs, key=lambda r: r["cv_mae"])
     win = dict(ranked[0])
     # regressor kind to actually persist (drives the demo's predicted-speedup

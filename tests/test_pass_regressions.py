@@ -10,6 +10,7 @@ Covers, specifically:
   * constant folding respecting 32-bit wrap-around and C remainder sign,
   * globals surviving DCE / CSE / codegen (no local shadow).
 """
+import pytest
 import shutil
 import tempfile
 import unittest
@@ -140,6 +141,8 @@ class TestPassRegressions(unittest.TestCase):
                                   f"unoptimized baseline ({oracle}):\n" + "\n".join(bad))
         finally:
             shutil.rmtree(workdir, ignore_errors=True)
+
+    @pytest.mark.slow
 
     def test_programs(self):
         for name, src in PROGRAMS.items():

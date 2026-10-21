@@ -1,152 +1,272 @@
 # AI-Based Compiler Optimization for MiniC
 
-Which optimization passes should a compiler run on *this* program? This project
-answers it on the clock instead of with a hand-tuned cost model. It contains a
-complete compiler for **MiniC** (a pointer-free C dialect), six toggleable
-optimization passes, a parallel timing harness, and a model that predicts the
-speedup of any pass combination **without running the program**.
+A complete compiler for **MiniC** (a small C dialect) with **six optimization passes** you can switch on and
+off, plus a **machine-learning model that predicts which passes to switch on** for a given program, without
+running it.
 
-**57,600 measured configurations**: 900 programs x all 64 pass combinations, each
-emitted to C, compiled with `gcc -O0`, checked for correctness, and timed on real
-binaries. `gcc` is pinned at `-O0` so every measured gain comes from *our* passes.
+Every claim is checked on real hardware. We compiled 900 programs with all 64 combinations of passes
+(**57,600 builds**), verified that each build still gives the right answer, and timed each one.
 
-## Key findings
+**Visual report:** [`docs/results.html`](docs/results.html). Download and open it in a browser (or run
+`python minic.py results`) for animated, interactive charts of every result.
+
+![Results page](docs/img/results-hero.jpg)
+
+---
+
+## The idea in one minute
+
+Compilers speed up code with **optimization passes**: small rewrites like "compute this once instead of
+three times" or "move this calculation out of the loop". Real compilers have hundreds of them, and the
+usual choice is to turn on a fixed set (`-O2`, `-O3`).
+
+But passes don't always help. Sometimes a pass makes a program slower, and passes affect each other. So
+for each program, **which combination of passes is fastest?**
+
+This project answers that question in three steps:
+
+1. **Build a compiler** small enough to control completely: MiniC → three-address code → 6 optimization
+   passes → C → `gcc -O0`. gcc's own optimizer is off, so any speedup comes from *our* passes.
+2. **Measure everything.** Every program × every one of the 64 pass combinations, compiled, checked and
+   timed. That gives the true best combination for each program.
+3. **Train a model** that looks at a program's code (27 features like loop depth and repeated
+   expressions) and predicts the best combination. That makes it usable on a new program without
+   timing 64 builds.
+
+## How it works
+
+### The compiler pipeline
+
+```mermaid
+flowchart LR
+    A["MiniC source<br/>(.mc file)"] --> B["Lexer + parser<br/>+ type checks"]
+    B --> C["Three-address code<br/>(TAC)"]
+    C --> D{"6 optimization passes<br/>(any of 64 combos)"}
+    D --> E["Emit C code"]
+    E --> F["gcc -O0"]
+    F --> G["Run and time<br/>(fastest of 15)"]
+    C -. "27 features" .-> M(["ML model"])
+    M -. "recommended combo" .-> D
+```
+
+**Three-address code (TAC)** is a simple instruction list where every line does one operation
+(`t1 = a * b`). It's easy to analyze and rewrite, which is why the passes work on it.
+
+### The six passes
+
+Each pass is one **bit** of a combination number. Add the values of the passes you want:
+
+| Pass | Value | What it does | Example |
+|---|--:|---|---|
+| **CF** Constant folding | 1 | computes known values at compile time | `6 * 7` → `42` |
+| **DCE** Dead-code elimination | 2 | deletes results nobody uses | unused `t3 = ...` removed |
+| **CSE** Common subexpression elimination | 4 | computes a repeated expression once | `x*y + x*y` → `t = x*y; t + t` |
+| **LICM** Loop-invariant code motion | 8 | moves unchanging work out of loops | `a * b` computed once, not 1,000,000 times |
+| **SR** Strength reduction | 16 | swaps costly operations for cheap ones | `i * 4` → running `+ 4` |
+| **LU** Loop unrolling | 32 | copies the loop body 4× to cut loop overhead | 4 iterations per loop test |
+
+So combo `0` = no passes, `63` = all six (1+2+4+8+16+32), `9` = CF + LICM. The passes run in a fixed order
+and repeat until the code stops changing.
+
+### The experiment
+
+```mermaid
+flowchart TD
+    P["900 programs<br/>30 hand-written + 870 generated"] --> S["Compile each with all 64 combos"]
+    S --> V{"Same result as<br/>unoptimized build?"}
+    V -- "no" --> X["discard: miscompiled"]
+    V -- "yes" --> T["Time it: 4 warm-ups,<br/>fastest of 15 runs"]
+    T --> DS[("benchmark_dataset.csv<br/>57,600 rows")]
+    DS --> CV["Train + test the model<br/>(5-fold, whole programs held out)"]
+    CV --> R["RESULTS.md · PERF_ANALYSIS.md<br/>docs/results.html"]
+```
+
+### How the model makes a recommendation
+
+```mermaid
+flowchart LR
+    F["27 features of the program"] --> PR["Predict the speedup<br/>of all 64 combos"]
+    PR --> Q{"Best prediction<br/>at least ×1.05?"}
+    Q -- yes --> REC["Recommend that combo"]
+    Q -- no --> AB["Abstain: recommend no passes<br/>(avoids slowing it down)"]
+```
+
+## Results
 
 | | |
 |---|---|
-| Best combo per program (oracle) | **x1.31** geomean, up to **x4.37** |
-| Gap left by "turn every pass on" | all-on is >2% short of the per-program best on **715 / 900** programs, and **2.3x slower** than no optimization on the worst one |
-| Pass effects are **not additive** | the product of single-pass speedups predicts x1.10 all-on; measured is x1.19. It is >10% off on **680 / 900** programs |
-| A pass that usually hurts | strength reduction slows down **25%** of programs at `-O0` and helps only 16% |
-| Blind search is costly and unsafe | **25%** of all configurations are slower than doing nothing; greedy search needs **16.4 timed runs** per program to reach x1.25 |
-| Learned model (zero runs, held-out programs) | **x1.21** mean speedup with **9%** regressions. All-on gives x1.22 with 12.4% regressions |
-| Measurement noise under parallel load | median/min run time is 1.10 (p95 **1.41**), so the harness records the least-interfered of 15 runs |
+| Best combination for each program (found by timing all 64) | **×1.31** average speedup, up to **×4.37** |
+| All 6 passes on | **×1.19** average, but not the best choice for **715 of 900** programs, and **2.3× slower** than no optimization on the worst one |
+| Every combination slows down at least one program | there is no safe fixed default |
+| Effects of passes don't simply add up | multiplying single-pass speedups predicts ×1.10; measured ×1.19 |
+| **ML model** (on programs it never saw, no timing needed) | **×1.21** average, slows **9%** of programs |
+| All 6 passes, same measure | ×1.22 average, slows 12.4% of programs |
 
-**Honest result:** the learned model *matches* the "all passes on" heuristic in
-average speedup and cuts regressions by about a quarter (12.4% to 9%). It does
-**not yet beat it**. Neither does any fallback variant tried: abstaining to
-all-on instead of no-passes peaks at x1.223. The remaining gap to the oracle
-(x1.33 mean) is the open problem. Static features miss the pass interactions
-that dominate the measured speedups (see finding 3).
+**Honest result:** the model roughly *matches* "turn everything on" in speed, while slowing fewer
+programs and needing zero timing runs. It doesn't yet beat it. The best-possible ×1.33 shows there's
+room left. Pass interactions, which simple code features don't capture well, are the main obstacle.
 
-Write-ups:
-[`PERF_ANALYSIS.md`](PERF_ANALYSIS.md): per-pass marginal effects, non-additivity, search cost, noise ·
-[`RESULTS.md`](RESULTS.md): per-program and per-category speedups ·
-[`MODEL_COMPARISON.md`](MODEL_COMPARISON.md): 8-model bake-off (Ridge / RF / HistGBT / MLP / 1D-CNN / GRU / hybrids) ·
-[`docs/results.html`](docs/results.html): visual report ·
-[`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md): one program traced through every stage
+![Every program: best combination vs. all passes on](docs/img/results-charts.jpg)
 
-## Quickstart
+Details: [`RESULTS.md`](RESULTS.md) (every program) · [`PERF_ANALYSIS.md`](PERF_ANALYSIS.md) (per-pass
+effects, interactions, timing noise) · [`MODEL_COMPARISON.md`](MODEL_COMPARISON.md) (8 models compared) ·
+[`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md) (one program traced through every stage).
+
+## Quick start
+
+**1. Install the requirements**
+
+- **Python 3.9 or newer**
+- **gcc** on your PATH. MiniC compiles its output with gcc.
+  - Windows: `winget install BrechtSanders.WinLibs.POSIX.UCRT`, then open a new terminal
+  - macOS: `xcode-select --install`
+  - Linux: `sudo apt install gcc`
+
+**2. Install the Python packages and check your setup**
+
+Create a virtual environment for the project (once), then activate it in every new terminal:
+
+```bash
+python -m venv .venv
+```
+
+```bash
+.venv\Scripts\activate
+```
+
+(On macOS / Linux: `source .venv/bin/activate`.) Your prompt now starts with `(.venv)`. Then install the
+packages:
 
 ```bash
 pip install -r requirements.txt
-
-# compile a MiniC program: AST / TAC / features / optimized C / run it
-python -m src.minic.driver canonical_example.mc --tac --features
-python -m src.minic.driver canonical_example.mc --optimize 63 --emit-c --run
-
-# ask the model which passes to use, then prove it on the clock
-python -m demo.cli recommend benchmarks/loops/licm_arith.mc --verify
-
-# browser playground: editor -> compile two ways -> speedup + optimization report
-python -m demo.app            # http://127.0.0.1:5005
-
-# run the whole experiment (sweep -> dataset -> model bake-off -> RESULTS.md)
-python run_experiment.py                 # ~3.5 h full sweep (900 programs, 8 workers)
-python run_experiment.py --skip-sweep    # ~3 min: re-bake / retrain from the CSV
-python run_experiment.py --skip-sweep --compare-models   # + 8-model bake-off -> MODEL_COMPARISON.md (~25 min)
-python -m src.minic.harness.perf_analysis                 # ~5 s: PERF_ANALYSIS.md from the CSV
 ```
 
-Requirements: Python 3.9+ for the compiler itself; `numpy` / `scikit-learn` /
-`pandas` (and `flask` for the demo) for the ML pipeline. `gcc` on `PATH`.
-
-## Methodology
-
-- **Correctness gate:** every one of the 64 combos must reproduce the
-  unoptimized binary's exit code before its timing is recorded, so a miscompile
-  contributes no data.
-- **Timing:** 4 warm-up runs, then the minimum of 15 wall-clock runs, with 8
-  programs swept in parallel. The minimum is the least-interfered sample. The
-  median is 10-40% noisier under this load.
-- **`gcc -O0`:** the backend adds nothing, so a speedup is attributable to the
-  MiniC passes alone. `gcc -O2` appears only as a reference point.
-- **No leakage:** cross-validation uses GroupKFold by program. All 64 rows of a
-  program share its static features, so a random split would leak.
-- **Metrics:** speedup = `time(no passes) / time(combo)`. "Regression" means
-  >2% slower than no passes. Means are arithmetic unless marked geomean, and
-  comparisons always use the same kind.
-
-## Pipeline
-
-```
-MiniC .mc
-  │  lexer → parser → AST → semantic analysis            src/minic/frontend/
-  ▼
-Three-address code (TAC)                                 src/minic/ir/
-  │  + 27 static features (19 structural + 8 "opportunity")   src/minic/features/
-  ▼
-6 toggleable optimization passes, 64 combos              src/minic/optimizer/
-  │  CF · DCE · CSE · LICM · SR · loop unrolling
-  │  canonical order CF→CSE→LU→LICM→SR→DCE, iterated to a fixed point
-  ▼
-value-semantics C  (arrays/structs/strings → one-field wrapper structs)   src/minic/codegen/
-  │  gcc -O0 → timed (least of 15 runs, parallel sweep)  src/minic/harness/
-  ▼
-dataset  →  GroupKFold model bake-off  →  recommender    src/minic/ml/
+```bash
+python minic.py check
 ```
 
-MiniC has no pointers and no dynamic memory, so there is **no aliasing** — which
-is what makes the passes provably sound and the whole approach tractable.
+`check` verifies Python, the packages, gcc and the dataset, then compiles and runs a test program. If it
+prints `All good.`, everything below works.
 
-### The recommender
+**3. Try it**
 
-`src/minic/ml/train.py::choose_strategy` cross-validates the *selection strategy*
-itself, not just the regressor: it compares plain argmax-over-predicted-speedup,
-an abstain-margin sweep (fall back to "no passes" unless the predicted gain clears
-a threshold), and per-pass classifiers — and picks the most useful one whose
-held-out regression rate stays under 10%. The winning model carries its strategy
-in its metadata; `demo/` surfaces when it abstains.
+```bash
+python minic.py compile canonical_example.mc --optimize 63 --run
+```
+
+```bash
+python minic.py recommend benchmarks/loops/licm_arith.mc --verify
+```
+
+```bash
+python minic.py playground
+```
+
+The first time you use `recommend` or the playground, the model trains itself from the included dataset.
+That takes about 15 seconds, once.
+
+The **playground** is a browser editor: write MiniC, press Run, and it shows the speedup and time saved,
+the passes the model switched on, a timing race between the builds, the model's predictions for all 64
+combinations, and a GitHub-style diff of the code before and after.
+
+| Result | Code before / after |
+|---|---|
+| ![Playground result](docs/img/playground.jpg) | ![Playground diff](docs/img/playground-diff.jpg) |
+
+## All commands
+
+Run everything from the repository folder as `python minic.py <command>`. Add `--help` to any command for
+its options.
+
+| Command | What it does | Time |
+|---|---|---|
+| `check` | checks Python, packages, gcc and data; runs a smoke test | seconds |
+| `compile FILE.mc` | compiles a MiniC file and prints its TAC | instant |
+| `compile FILE.mc --optimize 63 --run` | applies passes (0–63), compiles with gcc and runs it | ~1 s |
+| `compile FILE.mc --tree` / `--cfg` / `--features` / `--emit-c` | shows the syntax tree / control-flow graph / 27 features / generated C | instant |
+| `recommend FILE.mc` | asks the model which passes to use | ~1 s |
+| `recommend FILE.mc --verify` | …and times the program with and without them | ~5–30 s |
+| `benchmark FILE.mc` | times the program with each pass alone and all together | ~10–60 s |
+| `playground` | browser editor at http://127.0.0.1:5005: write MiniC, compare speeds | — |
+| `results` | rebuilds `docs/results.html` from the dataset and opens it | seconds |
+| `analyze` | rewrites `PERF_ANALYSIS.md` from the dataset | seconds |
+| `experiment` | retrains and re-evaluates the model, rewrites `RESULTS.md` | ~4 min |
+| `experiment --full` | re-times all 57,600 builds first (needs a quiet machine) | ~3.5 h |
+| `experiment --compare-models` | also runs the 8-model comparison (needs `pip install -r requirements-models.txt`) | ~25 min |
+| `test` / `test --quick` | runs the whole test suite / skips the 6 slow 64-combo tests | ~25 min / ~20 s |
+
+## Write your own MiniC program
+
+MiniC is C without pointers or dynamic memory: `int`, `float`, `char`, fixed-size 1D/2D arrays, structs,
+strings, functions (including recursion), `if`/`else`, `while` and `for`. There's no I/O, so a program's
+**return value** is its output (shown as `Program returned: N`). Keep it between 0 and 255, because it
+becomes the process exit code.
+
+```c
+int main() {
+    int total = 0;
+    int i = 0;
+    while (i < 1000000) {
+        total = total + (i % 7) * 3;
+        i = i + 1;
+    }
+    return total % 251;
+}
+```
+
+Save it as `mine.mc`, then run:
+
+```bash
+python minic.py recommend mine.mc --verify
+```
+
+Full language reference: [`docs/spec/minic-language-spec.md`](docs/spec/minic-language-spec.md).
 
 ## Repository layout
 
 ```
-src/minic/            the compiler + harness + ML
-  frontend/  ir/  features/  optimizer/  codegen/  harness/  ml/
-  driver.py           CLI: python -m src.minic.driver <file.mc> [--tac --optimize N --run ...]
-demo/
-  app.py              Flask browser playground (port 5005)
-  cli.py              minic-opt recommend | benchmark
-benchmarks/           30 hand-written programs (5 categories) + ground_truth.csv
-  generated/          870 parametric programs (committed; _manifest.csv maps each to its pattern)
-tests/                pytest — front end, IR, every pass × 64 combos, harness, ML
-data/                 benchmark_dataset.csv (tracked); trained_model.pkl (gitignored)
-run_experiment.py     one command: sweep → dataset → bake-off → train → RESULTS.md
-RESULTS.md            current measured results
-PERF_ANALYSIS.md      pass interactions, search cost, measurement noise
-MODEL_COMPARISON.md   8-model bake-off (tabular / sequence / hybrid)
-reports/              course reports (Review 1 / Final) + their generators
-docs/
-  results.html        the visual results report
-  WALKTHROUGH.md      one program traced through every stage (lexer → … → ML)
-  spec/               MiniC language specification
-  planning/           original design plan, workflow, prompt log
-  team/               per-person notes, contribution map, continuation guide
+minic.py                 the single entry point (python minic.py --help)
+src/minic/
+  frontend/              lexer, parser, semantic checks (types, scopes)
+  ir/                    three-address code, control-flow graphs
+  optimizer/             the 6 passes + pass manager (runs them to a fixed point)
+  codegen/               TAC -> C
+  features/              the 27 features the model reads
+  harness/               gcc compile + timing, the 64-combo sweep, reports, results page
+  ml/                    dataset, models, training, recommendation
+demo/                    command-line tool (recommend / benchmark) and the browser playground
+benchmarks/              30 hand-written programs + 870 generated ones (benchmarks/generated/)
+data/                    benchmark_dataset.csv (all 57,600 timings); the trained model is created locally
+docs/                    results page, walkthrough, language spec, team notes
+reports/                 course reports (Review 1 / Final) and the scripts that generate them
+tests/                   pytest suite
 ```
 
 ## Testing
 
 ```bash
-python -m pytest -q
+python minic.py test --quick
 ```
 
-The suite runs the front end, IR, each
-pass individually and in 64-combo sweeps, the harness, and the ML dataset plumbing.
+```bash
+python minic.py test
+```
+
+The full suite checks that **all 64 pass combinations** produce the same result as the unoptimized build
+for every test program, along with the front end, IR, each pass, the timing harness and the ML plumbing.
+
+## Notes
+
+- **The trained model isn't committed.** Saved scikit-learn models only load with the library version that
+  saved them, and the old random-forest model was 640 MB. Instead, a small gradient-boosting model (2 MB,
+  same accuracy) is trained from `data/benchmark_dataset.csv` the first time it's needed.
+- **Timings depend on the machine.** Re-running `experiment --full` on another computer gives somewhat
+  different numbers, but the same overall picture.
+- **Measured with an earlier compiler version.** The dataset was recorded before a fix to loop unrolling,
+  which, combined with LICM, could unroll a loop twice. The extra copy never ran, so results were correct;
+  it only made the generated code larger. See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Team
 
-Four roles — front end / IR / features (A), optimization passes + codegen (B),
-timing harness + ML + demo (C), benchmark corpus (D). See
-[`docs/team/CONTRIBUTIONS.md`](docs/team/CONTRIBUTIONS.md) for the area→owner map
-and [`docs/team/TEAM_CONTINUATION_GUIDE.md`](docs/team/TEAM_CONTINUATION_GUIDE.md)
-to pick up the work.
+Four roles: front end / IR / features (A), optimization passes + code generation (B), timing harness + ML +
+demo (C), benchmark programs (D). See [`docs/team/CONTRIBUTIONS.md`](docs/team/CONTRIBUTIONS.md).

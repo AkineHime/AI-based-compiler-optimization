@@ -1,0 +1,5 @@
+# Optional: the 8-model bake-off (python minic.py experiment --compare-models)
+# adds CNN / GRU / MLP models built with PyTorch. CPU wheels are enough:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+-r requirements.txt
+torch>=2.0

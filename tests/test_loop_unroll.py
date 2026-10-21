@@ -1,4 +1,5 @@
 """Loop unrolling (pass 6) + pass-manager fixpoint iteration."""
+import pytest
 import shutil
 import tempfile
 import unittest
@@ -35,6 +36,39 @@ class TestLoopUnroll(unittest.TestCase):
         # the original loop is kept as the remainder
         self.assertTrue(any("while_start" in n or "for_start" in n for n in labels))
 
+    def test_lu_with_licm_unrolls_only_once(self):
+        # Regression: LICM inserts a pre-header between the unroll guard and the
+        # remainder loop, which used to hide that the remainder was already
+        # unrolled, so the next fixpoint round unrolled it again.
+        src = ("int main(){int a=6;int b=7;int sum=0;int i=0;"
+               "while(i<100){int k=a*b;sum=sum+k*2;i=i+1;}return sum;}")
+        for combo in (32 | 8, 63):
+            out = optimize_program(tac(src), combo).functions[0]
+            unroll_labels = [i for i in out.instructions
+                             if i.opcode == Opcode.LABEL and str(i.dst).startswith("L_unroll_")]
+            self.assertEqual(len(unroll_labels), 1, f"combo {combo}")
+
+    def test_output_is_deterministic_across_processes(self):
+        # Regression: fresh temp ids were handed out while iterating a set, so the
+        # emitted code changed with Python's per-process string-hash seed.
+        import os
+        import subprocess
+        import sys
+        script = (
+            "from src.minic.harness.sweeper import frontend\n"
+            "from src.minic.ir.ir_printer import IRPrinter\n"
+            "from src.minic.optimizer import optimize_program\n"
+            "src = 'int main(){int a=6;int b=7;int s=0;int i=0;"
+            "while(i<100){int k=a*b;s=s+k*2;i=i+1;}return s;}'\n"
+            "print(IRPrinter.format_program(optimize_program(frontend(src)[1], 63)))\n")
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        outs = set()
+        for seed in ("1", "2", "3"):
+            env = dict(os.environ, PYTHONHASHSEED=seed)
+            outs.add(subprocess.run([sys.executable, "-c", script], cwd=root, env=env,
+                                    capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(len(outs), 1)
+
     def test_leaves_loops_with_control_flow_alone(self):
         src = ("int main(){int acc=0;int i=0;"
                "while(i<1000){ if(i>500){acc=acc+1;} i=i+1;}return acc;}")
@@ -58,6 +92,8 @@ class TestUnrollCorrectness(unittest.TestCase):
         "step_3": ("int main(){int a=0;int i=0;"
                    "while(i<900000){a=a+i;i=i+3;}return ((a%251)+251)%251;}"),
     }
+
+    @pytest.mark.slow
 
     def test_all_64_combos_match_baseline(self):
         for name, src in self.PROGRAMS.items():
