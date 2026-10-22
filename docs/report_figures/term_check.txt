@@ -1,0 +1,19 @@
+MiniC setup check
+
+  OK    Python 3.13.15 (need 3.9+)
+  OK    numpy 2.5.4
+  OK    scikit-learn 1.9.1
+  OK    pandas 3.0.6
+  OK    flask 3.1.3
+  OK    matplotlib 3.11.2
+  OK    pytest 9.1.1
+  OK    gcc: gcc.exe (MinGW-W64 x86_64-ucrt-posix-seh, built by Brecht Sanders) 16.2.0
+  OK    dataset data/benchmark_dataset.csv
+  OK    model data/trained_model.pkl
+  OK    torch (optional, for --compare-models)
+
+smoke test: compile + run canonical_example.mc with all passes ...
+Optimizations Applied: CF, DCE, CSE, LICM, SR, LU
+Program returned: 83
+
+All good.

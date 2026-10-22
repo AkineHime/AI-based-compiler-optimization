@@ -1,19 +1,29 @@
-"""Final project report (BCSE307P Innovative Project) -> Compiler_Design_Project_Final_Report.docx
+"""Review 3 / Final project report (BCSE307P Innovative Project)
+-> Compiler_Design_Project_Review_3_Report.docx & Compiler_Design_Project_Final_Report.docx
 
-    python reports/generate_final_report.py              # figures + docx
+    python reports/generate_final_report.py              # figures + docx (+ pdf TOC pass if soffice works)
     python reports/generate_final_report.py --no-figures # docx only (reuse docs/report_figures/*.png)
+    python reports/generate_final_report.py --no-pdf     # skip LibreOffice PDF render pass
+    python reports/generate_final_report.py --from-pdf <path.pdf> # populate exact TOC page numbers from rendered PDF
 
 Fills the VIT report template (title page + the template's seven headings) with the
-900-program results.  Charts are drawn from data/benchmark_dataset.csv; terminal
-figures are rendered from real command output captured into docs/report_figures/term_*.txt.
-Needs: python-docx, matplotlib.
+900-program results and all Review-3 additions (performance & non-additivity analysis,
+size-aware HistGBT recommender with auto-training, LU+LICM & determinism fixes,
+unified minic.py CLI, redesigned browser playground, and interactive results dashboard).
+Charts are drawn from data/benchmark_dataset.csv; terminal figures are rendered from
+real command output captured into docs/report_figures/term_*.txt.
+Needs: python-docx, matplotlib, pypdf (or pymupdf).
 """
 import argparse
 import math
 import os
 import re
+import shutil
 import sys
+import tempfile
 from collections import defaultdict
+
+os.environ.setdefault("MPLCONFIGDIR", os.path.join(tempfile.gettempdir(), "mpl_minic"))
 
 import matplotlib
 matplotlib.use("Agg")
@@ -23,23 +33,41 @@ from matplotlib.patches import FancyBboxPatch
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
+sys.path.insert(0, HERE)
 
 from src.minic.harness.report import summarize  # noqa: E402
+from src.minic.harness.perf_analysis import analyse as analyse_perf  # noqa: E402
 
 FIG = os.path.join(ROOT, "docs", "report_figures")
+IMG = os.path.join(ROOT, "docs", "img")
 DATASET = os.path.join(ROOT, "data", "benchmark_dataset.csv")
-TEMPLATE = os.path.join(os.path.expanduser("~"), "Downloads", "Project - Report Template.docx")
-OUT = os.path.join(HERE, "Compiler_Design_Project_Final_Report.docx")
+
+_DL_TEMPLATE = os.path.join(os.path.expanduser("~"), "Downloads", "Project - Report Template.docx")
+_R2_TEMPLATE = os.path.join(HERE, "Compiler_Design_Project_Review_2_Report.docx")
+_FINAL_PATH = os.path.join(HERE, "Compiler_Design_Project_Final_Report.docx")
+OUT_R3 = os.path.join(HERE, "Compiler_Design_Project_Review_3_Report.docx")
+OUT = _FINAL_PATH
+
+
+def _resolve_template():
+    for candidate in (_DL_TEMPLATE, _R2_TEMPLATE, _FINAL_PATH):
+        try:
+            if os.path.exists(candidate):
+                return candidate
+        except OSError:
+            continue
+    raise FileNotFoundError("Could not find VIT report template docx.")
+
 
 PASS_BITS = [(1, "CF"), (2, "DCE"), (4, "CSE"), (8, "LICM"), (16, "SR"), (32, "LU")]
 
 # Strategy bake-off on the 900-program dataset (run_experiment.py output, 5-fold
 # GroupKFold).  margin 0.0 = plain argmax.  (reco speedup, regression %, capture %)
 STRATEGY = {
-    "Random Forest": {0.0: (1.21, 12, 64), 0.03: (1.21, 10, 64), 0.05: (1.21, 9, 63),
-                      0.08: (1.21, 8, 62), 0.12: (1.20, 4, 60), 0.18: (1.18, 3, 55)},
     "HistGradient Boosting": {0.0: (1.21, 14, 63), 0.03: (1.21, 10, 63), 0.05: (1.21, 9, 62),
                               0.08: (1.20, 6, 60), 0.12: (1.19, 4, 58), 0.18: (1.18, 2, 53)},
+    "Random Forest": {0.0: (1.21, 12, 64), 0.03: (1.21, 10, 64), 0.05: (1.21, 9, 63),
+                      0.08: (1.21, 8, 62), 0.12: (1.20, 4, 60), 0.18: (1.18, 3, 55)},
     "Extra Trees": {0.0: (1.21, 13, 62), 0.03: (1.21, 12, 63), 0.05: (1.21, 11, 62),
                     0.08: (1.20, 9, 61), 0.12: (1.20, 6, 59), 0.18: (1.19, 3, 56)},
 }
@@ -84,12 +112,12 @@ def _save(fig, name):
 # --------------------------------------------------------------------------- #
 def fig_pipeline():
     stages = [
-        ("MiniC source", ".mc file"),
+        ("MiniC source", ".mc file\n(minic.py CLI / UI)"),
         ("Front end", "lexer · parser\nAST · semantic checks"),
         ("TAC IR + CFG", "basic blocks, dominators,\nnatural loops"),
         ("27 static features", "19 structural +\n8 opportunity"),
-        ("ML recommender", "predict speedup of all\n64 combos, abstain margin"),
-        ("Pass manager", "6 passes in canonical\norder, to a fixed point"),
+        ("HistGBT recommender", "2 MB model (auto-trained),\nabstain margin m = 0.05"),
+        ("Pass manager", "6 deterministic passes,\niterated to a fixed point"),
         ("C codegen", "value-semantics C\n(wrapper structs)"),
         ("gcc -O0 + timer", "least of 15 runs,\nexit-code check"),
     ]
@@ -100,11 +128,11 @@ def fig_pipeline():
     pos = [(i, 1) for i in range(4)] + [(3 - i, 0) for i in range(4)]
     for (title, sub), (cx, cy) in zip(stages, pos):
         x, y = cx + 0.08, cy + 0.18
-        hl = title in ("ML recommender", "27 static features")
+        hl = title in ("HistGBT recommender", "27 static features")
         ax.add_patch(FancyBboxPatch((x, y), 0.84, 0.64, boxstyle="round,pad=0.02,rounding_size=0.05",
                                     fc="#eff6ff" if hl else "#f9fafb",
                                     ec=BLUE if hl else "#9ca3af", lw=1.4))
-        ax.text(x + 0.42, y + 0.47, title, ha="center", va="center", fontsize=11.5,
+        ax.text(x + 0.42, y + 0.47, title, ha="center", va="center", fontsize=11.0,
                 fontweight="bold", color=INK)
         ax.text(x + 0.42, y + 0.2, sub, ha="center", va="center", fontsize=9, color=MUTED)
     arrow = dict(arrowstyle="-|>", color=INK, lw=1.2)
@@ -112,8 +140,8 @@ def fig_pipeline():
         ax.annotate("", xy=(i + 1.08, 1.5), xytext=(i + 0.94, 1.5), arrowprops=arrow)
         ax.annotate("", xy=(i + 0.92, 0.5), xytext=(i + 1.06, 0.5), arrowprops=arrow)
     ax.annotate("", xy=(3.5, 0.84), xytext=(3.5, 1.16), arrowprops=arrow)
-    ax.text(2.0, 0.04, "Offline: every program × 64 combos is timed → dataset → model training "
-            "(GroupKFold by program)", ha="center", fontsize=9.5, color=MUTED, style="italic")
+    ax.text(2.0, 0.04, "Offline: 900 programs × 64 combos timed → dataset → GroupKFold bake-off, "
+            "PERF_ANALYSIS.md & docs/results.html", ha="center", fontsize=9.2, color=MUTED, style="italic")
     _save(fig, "fig_pipeline.png")
 
 
@@ -140,6 +168,7 @@ def fig_passmask():
 # --------------------------------------------------------------------------- #
 def data_charts():
     s = summarize(DATASET)
+    perf = analyse_perf(DATASET)
     pp = s["per_program"]
     best = [p["best_speedup"] for p in pp]
     allon = [p["all_on_speedup"] for p in pp]
@@ -223,20 +252,85 @@ def data_charts():
     ax.set_title("The 15 programs with the largest gains")
     _save(fig, "fig_top.png")
 
-    # 6. recommender vs baselines
-    names = ["No passes\n(combo 0)", "All passes\n(combo 63)", "ML recommender\n(held-out)", "Oracle\n(hindsight)"]
-    vals = [1.00, 1.19, 1.21, 1.33]
-    cols = ["#d1d5db", LIGHT, BLUE, "#1e3a8a"]
+    # 6. per-pass marginal effect & helps/hurts (NEW for Review 3)
+    p_list = perf["passes"]
+    p_names = [p["name"] for p in p_list]
+    px = list(range(len(p_names)))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9.2, 3.6))
+    alone_vals = [p["alone"] for p in p_list]
+    marg_vals = [p["marginal"] for p in p_list]
+    err_lo = [p["marginal"] - p["ctx_lo"] for p in p_list]
+    err_hi = [p["ctx_hi"] - p["marginal"] for p in p_list]
+    ax1.bar([i - 0.18 for i in px], alone_vals, 0.34, color=LIGHT, label="alone (single pass)")
+    ax1.bar([i + 0.18 for i in px], marg_vals, 0.34, color=BLUE, label="marginal (32 contexts)")
+    ax1.errorbar([i + 0.18 for i in px], marg_vals, yerr=[err_lo, err_hi],
+                 fmt="none", ecolor=INK, elinewidth=1.2, capsize=3)
+    ax1.axhline(1.0, color=INK, lw=0.8, ls="--")
+    ax1.set_xticks(px)
+    ax1.set_xticklabels(p_names)
+    ax1.set_ylim(0.95, 1.15)
+    ax1.set_ylabel("geomean speedup")
+    ax1.set_title("Alone vs. marginal effect (with 32-context range)")
+    ax1.legend(frameon=False, fontsize=8.5, loc="upper left")
+
+    helps_pct = [p["helps"] * 100 for p in p_list]
+    hurts_pct = [p["hurts"] * 100 for p in p_list]
+    ax2.bar([i - 0.18 for i in px], helps_pct, 0.34, color=GREEN, label="helps (>2% faster)")
+    ax2.bar([i + 0.18 for i in px], hurts_pct, 0.34, color=RED, label="hurts (>2% slower)")
+    for i, (hp, hr) in enumerate(zip(helps_pct, hurts_pct)):
+        ax2.text(i - 0.18, hp + 1.2, f"{hp:.0f}%", ha="center", fontsize=8)
+        ax2.text(i + 0.18, hr + 1.2, f"{hr:.0f}%", ha="center", fontsize=8)
+    ax2.set_xticks(px)
+    ax2.set_xticklabels(p_names)
+    ax2.set_ylim(0, 75)
+    ax2.set_ylabel("% of programs")
+    ax2.set_title("Share of programs helped vs. hurt on average")
+    ax2.legend(frameon=False, fontsize=8.5, loc="upper right")
+    fig.suptitle("Empirical per-pass behaviour across 57,600 timed builds", fontsize=12)
+    fig.tight_layout()
+    _save(fig, "fig_pass_marginal.png")
+
+    # 7. search cost vs speedup (NEW for Review 3)
+    fig, ax = plt.subplots(figsize=(8.2, 3.6))
+    strat_labels = [
+        "No passes\n(1 run)",
+        "ML recommender\nHistGBT (0 runs)",
+        "All 6 passes\n(1 run, 12.4% regr.)",
+        "Greedy search\n(16.4 runs)",
+        "Oracle search\n(64 runs)",
+    ]
+    mean_vals = [1.000, 1.210, perf["all_on_mean"], perf["greedy_mean"], perf["oracle_mean"]]
+    geo_vals = [1.000, 1.190, perf["all_on"], perf["greedy"], perf["oracle"]]
+    sx = list(range(len(strat_labels)))
+    b1 = ax.bar([i - 0.18 for i in sx], mean_vals, 0.35, color=BLUE, label="arithmetic mean speedup")
+    b2 = ax.bar([i + 0.18 for i in sx], geo_vals, 0.35, color=LIGHT, label="geometric mean speedup")
+    for b, v in zip(b1, mean_vals):
+        ax.text(b.get_x() + b.get_width() / 2, v + 0.008, f"×{v:.2f}", ha="center", fontsize=8.5, fontweight="bold")
+    for b, v in zip(b2, geo_vals):
+        ax.text(b.get_x() + b.get_width() / 2, v + 0.008, f"×{v:.2f}", ha="center", fontsize=8.5, color=MUTED)
+    ax.set_xticks(sx)
+    ax.set_xticklabels(strat_labels, fontsize=9)
+    ax.set_ylim(0.92, 1.40)
+    ax.axhline(1.0, color=INK, lw=0.8, ls="--")
+    ax.set_ylabel("speedup over combo 0")
+    ax.legend(frameon=False, fontsize=9, loc="upper left")
+    ax.set_title("Speedup vs. compile-time search cost across 900 programs")
+    _save(fig, "fig_search_cost.png")
+
+    # 8. recommender vs baselines (consistent arithmetic mean metric)
+    names = ["No passes\n(combo 0)", "ML recommender\nHistGBT (9% regr.)", "All passes\n(12.4% regr.)", "Oracle\n(hindsight)"]
+    vals = [1.00, 1.21, 1.22, 1.33]
+    cols = ["#d1d5db", BLUE, LIGHT, "#1e3a8a"]
     fig, ax = plt.subplots(figsize=(7, 3.4))
     bars = ax.bar(names, vals, color=cols, width=0.6)
     for b, v in zip(bars, vals):
         ax.text(b.get_x() + b.get_width() / 2, v + 0.01, f"×{v:.2f}", ha="center", fontsize=11)
     ax.set_ylim(0.9, 1.4)
-    ax.set_ylabel("mean / geomean speedup")
-    ax.set_title("Recommender vs fixed policies (900 programs)")
+    ax.set_ylabel("mean speedup (held-out programs)")
+    ax.set_title("Recommender vs fixed policies on the same arithmetic-mean metric (900 programs)")
     _save(fig, "fig_reco.png")
 
-    # 7. abstain-margin sweep
+    # 9. abstain-margin sweep
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(9, 3.4))
     for (name, tab), c in zip(STRATEGY.items(), [BLUE, AMBER, GREEN]):
         ms = sorted(tab)
@@ -253,9 +347,8 @@ def data_charts():
     fig.tight_layout()
     _save(fig, "fig_margin.png")
 
-    # 8. model comparison
+    # 10. model comparison
     fig, ax = plt.subplots(figsize=(8.5, 4))
-    labels = [m[0] for m in MODELS]
     y = range(len(MODELS))[::-1]
     ax.barh([i + 0.2 for i in y], [m[2] for m in MODELS], 0.38, color=BLUE, label="with ≤10% regression cap")
     ax.barh([i - 0.2 for i in y], [m[8] for m in MODELS], 0.38, color=LIGHT, label="uncapped (plain argmax)")
@@ -312,20 +405,20 @@ def terminal(name, command, lines, width=92, cols=1, fs=9.6):
 
 
 def terminal_figures():
-    terminal("term_tac.png", "python -m src.minic.driver docs/walk.mc --tac", _read("term_tac.txt")[:24], cols=2)
-    terminal("term_tac21.png", "python -m src.minic.driver docs/walk.mc --optimize 21 --tac",
+    terminal("term_tac.png", "python minic.py compile docs/walk.mc --tac", _read("term_tac.txt")[:24], cols=2)
+    terminal("term_tac21.png", "python minic.py compile docs/walk.mc --optimize 21 --tac",
              _read("term_tac21.txt")[:27], cols=2)
-    terminal("term_cfg.png", "python -m src.minic.driver docs/walk.mc --cfg", _read("term_cfg.txt")[1:29], cols=2)
-    terminal("term_features.png", "python -m src.minic.driver docs/walk.mc --features",
+    terminal("term_cfg.png", "python minic.py compile docs/walk.mc --cfg", _read("term_cfg.txt")[1:29], cols=2)
+    terminal("term_features.png", "python minic.py compile docs/walk.mc --features",
              _read("term_features.txt")[:30], cols=2)
-    terminal("term_licm.png", "python -m src.minic.driver benchmarks/loops/licm_arith.mc --optimize 9 --tac",
+    terminal("term_licm.png", "python minic.py compile benchmarks/loops/licm_arith.mc --optimize 9 --tac",
              _read("term_licm.txt")[:38], cols=2)
     un = _read("term_unroll.txt")
-    terminal("term_unroll.png", "python -m src.minic.driver docs/walk.mc --optimize 32 --tac",
+    terminal("term_unroll.png", "python minic.py compile docs/walk.mc --optimize 32 --tac",
              un[:17] + ["    ... body repeated ×4 (28 instrs) ..."] + un[37:], cols=2)
     ec = _read("term_emitc.txt")
     i0 = next(i for i, l in enumerate(ec) if l.startswith("int distanceSquared"))
-    terminal("term_emitc.png", "python -m src.minic.driver canonical_example.mc --optimize 63 --emit-c",
+    terminal("term_emitc.png", "python minic.py compile canonical_example.mc --optimize 63 --emit-c",
              ec[2:19] + ["..."] + ec[i0:i0 + 26], cols=2)
     rec = _read("term_recommend.txt")
     j = next(i for i, l in enumerate(rec) if l.startswith("ML-recommended"))
@@ -334,13 +427,15 @@ def terminal_figures():
                  ("Loop-Invariant Code Motion (LICM)", "LICM"), ("Strength Reduction (SR)", "SR"),
                  ("Loop Unrolling (LU)", "LU")]:
         short = [l.replace(a, b) for l in short]
-    terminal("term_recommend.png", "python -m demo.cli recommend benchmarks/loops/licm_arith.mc --verify",
+    terminal("term_recommend.png", "python minic.py recommend benchmarks/loops/licm_arith.mc --verify",
              rec[:2] + ["static + opportunity features (27):   [19 structural features omitted]"]
              + rec[22:31] + [""] + short, width=100)
-    terminal("term_run.png", "python -m src.minic.driver canonical_example.mc --optimize 63 --run",
+    terminal("term_run.png", "python minic.py compile canonical_example.mc --optimize 63 --run",
              [l.replace("Constant Folding (CF), Dead Code Elimination (DCE), Common Subexpression "
                         "Elimination (CSE), Loop-Invariant Code Motion (LICM), Strength Reduction (SR), "
                         "Loop Unrolling (LU)", "CF, DCE, CSE, LICM, SR, LU") for l in _read("term_run.txt")])
+    if os.path.exists(os.path.join(FIG, "term_check.txt")):
+        terminal("term_check.png", "python minic.py check", _read("term_check.txt"), width=96)
     pt = _read("term_pytest.txt")
     keep = [l for l in pt if "PASSED" in l or "FAILED" in l or l.startswith("=")]
     keep = [re.sub(r"\s+\[\s*\d+%\]$", "", l) for l in keep]
@@ -348,7 +443,7 @@ def terminal_figures():
     tests = [l for l in keep if not l.startswith("=")]
     tail = [l for l in keep if l.startswith("=")][-1:]
     shown = tests[:30] + ([f"... {len(tests) - 30} more PASSED ..."] if len(tests) > 30 else [])
-    terminal("term_pytest.png", "python -m pytest -v tests/test_lexer.py tests/test_parser.py tests/test_sema.py … tests/test_harness_ml.py",
+    terminal("term_pytest.png", "python minic.py test --quick",
              head + shown + tail, width=100)
 
 
@@ -369,8 +464,8 @@ import docx                                                    # noqa: E402
 from docx.enum.section import WD_SECTION                       # noqa: E402,F401
 from docx.enum.table import WD_TABLE_ALIGNMENT                 # noqa: E402
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK, WD_TAB_ALIGNMENT, WD_TAB_LEADER  # noqa: E402
-from docx.oxml import OxmlElement, parse_xml                   # noqa: E402
-from docx.oxml.ns import nsdecls, qn                           # noqa: E402
+from docx.oxml import OxmlElement                              # noqa: E402
+from docx.oxml.ns import qn                                    # noqa: E402
 from docx.shared import Cm, Inches, Pt, RGBColor               # noqa: E402
 
 from generate_report_docx import set_cell_background, set_cell_margins  # noqa: E402
@@ -497,6 +592,8 @@ class Report:
         sec = self.d.sections[0]
         sec.different_first_page_header_footer = True
         p = sec.footer.paragraphs[0] if sec.footer.paragraphs else sec.footer.add_paragraph()
+        for r in list(p.runs):
+            r._element.getparent().remove(r._element)
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r = p.add_run()
         _font(r, size=10)
@@ -685,7 +782,7 @@ class Report:
             line(f"Table {n}: {cap}", 2, ("t", n), size=10.5)
 
     def save(self, path):
-        self.d.core_properties.title = "AI-Based Compiler Optimization for MiniC"
+        self.d.core_properties.title = "AI-Based Compiler Optimization for MiniC (Review-3 / Final Report)"
         self.d.core_properties.author = "Ashmit Verma, S Karthik Sudharsan, Mohammed Nadeem"
         self.d.save(path)
 
@@ -700,6 +797,10 @@ def F(name):
 
 def S(name):
     return os.path.join(HERE, "output-images", name)
+
+
+def I(name):
+    return os.path.join(IMG, name)
 
 
 # --------------------------------------------------------------------------- #
@@ -722,27 +823,34 @@ def write_body(R):
         "hand-written lexer and recursive-descent parser, a semantic analyser, lowering to three-address "
         "code (TAC), control-flow-graph and loop analysis, six independently switchable passes (constant "
         "folding, dead-code elimination, common-subexpression elimination, loop-invariant code motion, "
-        "strength reduction and loop unrolling, giving 2⁶ = 64 combinations) and a C code generator that "
-        "preserves MiniC's value semantics. Because MiniC has no pointers, there is no aliasing, which "
-        "makes every pass provably sound without alias analysis.", indent=True)
+        "strength reduction and loop unrolling, giving 2⁶ = 64 combinations) iterated deterministically "
+        "to a fixed point, and a C code generator that preserves MiniC's value semantics. Because MiniC "
+        "has no pointers, there is no aliasing, which makes every pass provably sound without alias analysis.",
+        indent=True)
     R.para(
         "Every result in this report is measured rather than modelled. Each of **900 benchmark programs** "
         "(30 hand-written and 870 generated) was compiled at all 64 pass combinations, built with "
         "`gcc -O0` so that the C compiler contributes no optimisation of its own, and timed on real "
         "hardware: **57,600 timed configurations**, every one verified to return the same result as the "
         "unoptimised program. Choosing the best combination per program gives a geometric-mean speedup of "
-        "**×1.31** (up to ×4.37), while simply enabling all six passes gives ×1.19 and is not the best "
-        "choice for 715 of the 900 programs. No fixed non-empty combination avoids slowing at least one "
-        "program down.", indent=True)
+        "**×1.31** (arithmetic mean ×1.33, up to ×4.37), while simply enabling all six passes gives ×1.19 "
+        "geomean (×1.22 arithmetic mean) and is not the best choice for 715 of the 900 programs. Across all "
+        "57,600 measurements, pass effects are strongly non-additive (multiplying single-pass speedups "
+        "predicts ×1.099 vs. ×1.190 measured, missing by >10% on 680/900 programs), and 25% of all non-empty "
+        "configurations make the program >2% slower than doing nothing.", indent=True)
     R.para(
-        "From 27 static features of a program's TAC, a Random Forest recommender with a risk-aware "
-        "_abstain margin_ achieves **×1.21** on held-out programs, capturing **63%** of the speedup an "
-        "oracle could obtain, while only **9%** of its recommendations make the program slower. An "
-        "eight-model comparison (linear, Random Forest, Histogram Gradient Boosting, MLP, 1D-CNN and GRU "
-        "over raw TAC, and hybrids) shows that tree ensembles over engineered features perform best, and "
-        "that a CNN reading only the raw instruction sequence comes within 1% of them.", indent=True)
-    R.para("**Keywords:** compiler optimisation, pass selection, phase ordering, three-address code, "
-           "machine learning, gradient boosting, random forest, MiniC.", after=0)
+        "From 27 static features of a program's TAC, a size-aware strategy bake-off selects **Histogram "
+        "Gradient Boosting** (`HistGBT`) with a risk-aware _abstain margin_ of 0.05. The model is only **2 MB** "
+        "(300× smaller than the 613 MB Random Forest it ties in accuracy, training automatically on first use "
+        "in ~15 s) and achieves a mean speedup of **×1.21** on held-out programs, capturing **62–63%** of the "
+        "oracle gain with zero timing runs while cutting regressions from 12.4% (all passes on) to **9%**. "
+        "An eight-model comparison (linear, Random Forest, HistGBT, MLP, 1D-CNN and GRU over raw TAC, and "
+        "hybrids) shows that tree ensembles over engineered features perform best, while a 1D-CNN reading "
+        "only the raw TAC sequence comes within 1% of them. The system is packaged behind a single unified "
+        "`minic.py` entry point, a redesigned browser playground with live build races and 64-combination "
+        "heatmaps, and an interactive visual results dashboard.", indent=True)
+    R.para("**Keywords:** compiler optimisation, pass selection, pass interaction, non-additivity, "
+           "three-address code, machine learning, gradient boosting, random forest, MiniC.", after=0)
 
     # ===================================================================== 2
     R.h1("2. Introduction")
@@ -774,57 +882,66 @@ def write_body(R):
     R.para(
         "The goal of this project is to answer, for an unseen MiniC program, the question: _which of the "
         "six available optimisation passes should be enabled?_ The answer must be produced statically, "
-        "without running the program, and must be measurably better than both doing nothing and enabling "
-        "everything, without making programs slower.", indent=True)
+        "without running the program, and must be measurably safer than blindly enabling everything while "
+        "capturing most of the available speedup.", indent=True)
     R.h2("2.3 Motivation")
     R.para(
         "Searching all combinations of passes for every program (iterative compilation) finds the best "
-        "configuration but requires compiling and running the program many times, which is impractical in "
-        "a normal build. Machine learning offers a middle path: learn, from programs that _have_ been "
-        "measured exhaustively, a mapping from static program properties to the expected benefit of each "
-        "configuration, and apply it to new programs at compile time [3], [7]. The project studies "
-        "this idea end-to-end in a setting small enough to measure every configuration exactly, so that "
-        "the recommender can be compared against the true optimum rather than an estimate.", indent=True)
+        "configuration but requires compiling and running the program 64 times — or an average of 16.4 "
+        "times even with greedy forward search, which still misses the optimum on more than half of all "
+        "programs. Machine learning offers a middle path: learn, from programs that _have_ been measured "
+        "exhaustively, a mapping from static program properties to the expected benefit of each "
+        "configuration, and apply it to new programs at compile time in under a millisecond [3], [7]. "
+        "This project studies that idea end-to-end in a setting small enough to measure every configuration "
+        "exactly, so that pass interactions, non-additivity, measurement noise, and the recommender can all "
+        "be evaluated against the true optimum rather than an estimate.", indent=True)
     R.h2("2.4 Objectives")
     R.bullets([
-        "Design and implement a complete compiler front end, IR and C back end for MiniC.",
-        "Implement six independently switchable, provably sound optimisation passes and a pass manager "
-        "that iterates them to a fixed point.",
-        "Extract a static feature vector from each program that describes both its structure and its "
-        "optimisation opportunities.",
-        "Build a benchmark corpus and a timing harness that measures every program at every pass "
-        "combination, with a correctness check on every build.",
-        "Train and validate a recommender that selects a pass combination for unseen programs while "
-        "keeping the rate of slowdowns under 10%.",
-        "Compare classical and neural models, including models that read the raw TAC instruction "
-        "sequence instead of engineered features.",
-        "Provide a command-line tool and a browser playground that demonstrate the full pipeline.",
+        "Design and implement a complete compiler front end, TAC IR and value-semantics C back end for MiniC.",
+        "Implement six independently switchable, provably sound, deterministic optimisation passes and a "
+        "pass manager that iterates them to a fixed point without duplicate transformations.",
+        "Extract a 27-dimensional static feature vector from each program that describes both its structure "
+        "(19 features) and its per-pass optimisation opportunities (8 features).",
+        "Build a 900-program benchmark corpus and a parallel timing harness that measures every program at "
+        "all 64 pass combinations (57,600 runs), with an exit-code correctness gate on every build.",
+        "Quantify per-pass marginal effects, non-additivity, search cost, and measurement noise across the "
+        "full factorial dataset (`PERF_ANALYSIS.md`).",
+        "Train and validate a compact, risk-aware recommender that selects a pass combination for unseen "
+        "programs while keeping regressions under 10%, and auto-trains on first use.",
+        "Compare eight classical and neural models, including 1D-CNN and GRU models that read the raw TAC "
+        "instruction sequence directly.",
+        "Provide a single unified CLI (`minic.py`), a redesigned browser playground with live build races "
+        "and 64-combo heatmaps, and an interactive visual results dashboard (`docs/results.html`).",
     ], numbered=True)
     R.h2("2.5 Scope and Assumptions")
     R.para(
-        "The optimiser works at the TAC level and emits C; the C is compiled with `gcc -O0`. Pinning the C "
+        "The optimiser works at the TAC level and emits C99; the C is compiled with `gcc -O0`. Pinning the C "
         "compiler at `-O0` is deliberate: at that level GCC performs essentially no optimisation, so the "
         "difference between two builds is attributable entirely to this project's passes. `gcc -O2` is "
-        "reported only as a reference point. The passes are intra-procedural; inter-procedural "
-        "optimisation and inlining are outside the scope of this work. All measurements were taken on a "
-        "single Windows 11 machine.", indent=True)
+        "reported in the playground and CLI as a reference point. The passes are intra-procedural; "
+        "inter-procedural optimisation and function inlining are outside the scope of this work. All 57,600 "
+        "measurements were recorded on a single Windows 11 machine.", indent=True)
     R.h2("2.6 Team and Contributions")
     R.table(["Member", "Reg. No.", "Area of contribution"], [
         ["Ashmit Verma", "24BCT0301", "Front end (lexer, recursive-descent parser, AST, semantic analysis), "
                                       "TAC lowering, CFG / dominator / loop analysis, 19 structural features."],
-        ["S Karthik Sudharsan", "24BAI0243", "Six optimisation passes, 64-combination pass manager with fixed-point "
-                                             "iteration, value-semantics C code generator."],
-        ["Mohammed Nadeem", "23BCE2091", "Timing harness and correctness oracle, benchmark corpus and generator, "
-                                         "opportunity features, ML recommender and model comparison, "
-                                         "CLI and web playground."],
+        ["S Karthik Sudharsan", "24BAI0243", "Six optimisation passes, deterministic temp allocation & LU+LICM "
+                                             "remainder-loop fix, 64-combo fixed-point pass manager, "
+                                             "value-semantics C code generator."],
+        ["Mohammed Nadeem", "23BCE2091", "Timing harness & correctness oracle, 900-program corpus & generator, "
+                                         "performance & non-additivity analysis, 8 opportunity features, "
+                                         "ML recommender & 8-model comparison, unified `minic.py` CLI, "
+                                         "redesigned web playground & interactive results page."],
     ], "Team members and areas of contribution", widths=[1.6, 1.0, 3.67])
     R.h2("2.7 Organisation of the Report")
     R.para(
         "Section 3 describes what is novel in the approach. Section 4 presents the proposed work: the "
-        "architecture, the MiniC language, every compiler stage, the measurement method, the corpus and "
-        "the learning formulation. Section 5 covers the implementation, screenshots of the working system "
-        "and the experimental results. Section 6 concludes with limitations and future work, and Section 7 "
-        "gives the repository link.", indent=True)
+        "architecture, the MiniC language, every compiler stage, the deterministic fixed-point pass manager, "
+        "the measurement methodology and noise analysis, the corpus, and the learning formulation. Section 5 "
+        "covers the implementation, the unified CLI, screenshots of the redesigned playground and interactive "
+        "results page, the experimental results including the per-pass interaction and non-additivity study, "
+        "and the progression across Review-1, Review-2, and Review-3. Section 6 concludes with honest "
+        "limitations and future work, and Section 7 gives the repository link.", indent=True)
 
     # ===================================================================== 3
     R.h1("3. Novelty in Project", new_page=False)
@@ -834,8 +951,8 @@ def write_body(R):
         "environments for phase ordering such as CompilerGym and AutoPhase [4], [5] and to production use "
         "in LLVM's MLGO framework for inlining and register-allocation decisions [6]. This project does not "
         "claim a new learning algorithm. Its contribution is a complete, small, fully measured system in "
-        "which every design choice serves the trustworthiness of the final number. The following aspects "
-        "distinguish it.", indent=True)
+        "which every design choice serves the trustworthiness of the final number. The following seven "
+        "aspects distinguish it.", indent=True)
     R.h2("3.1 An Alias-Free Language Designed for Sound Optimisation")
     R.para(
         "MiniC was designed around a single invariant: **no two variables can ever refer to the same memory**. "
@@ -859,14 +976,16 @@ def write_body(R):
         "loop-invariant instructions or redundant subexpressions, and an estimate of the dynamic "
         "instruction count. They give the model a preview of each pass's pay-off without running anything.",
         indent=True)
-    R.h2("3.4 Risk-Aware Recommendation")
+    R.h2("3.4 Risk-Aware and Size-Aware Recommendation")
     R.para(
         "A regressor that simply picks the configuration with the highest predicted speedup makes "
         "confident mistakes: on this corpus, plain argmax slows down 12–14% of programs. The recommender "
         "therefore **abstains** — recommends no passes — unless the best predicted speedup exceeds a margin. "
-        "Crucially, the margin, the model family and the selection rule (argmax, margin or per-pass "
-        "classifiers) are themselves chosen by cross-validation, as the most useful strategy whose "
-        "held-out regression rate stays under 10%.", indent=True)
+        "Both the margin, the model family and the selection rule are chosen by cross-validation under a "
+        "10% regression cap. Furthermore, because held-out speedups within 0.01× are indistinguishable from "
+        "timing noise, the selector breaks ties in favour of model compactness — picking a **2 MB Histogram "
+        "Gradient Boosting** model over a **613 MB Random Forest** and training it automatically on first "
+        "use in ~15 seconds on any fresh clone.", indent=True)
     R.h2("3.5 Leak-Free Evaluation")
     R.para(
         "A program contributes 64 rows to the dataset, all with identical static features. A random "
@@ -880,6 +999,13 @@ def write_body(R):
         "opcode/operand-kind sequence and trains 1D convolutional and recurrent (GRU) networks on it. All "
         "eight models are scored on one shared split with the same recommendation rule, which makes the "
         "comparison between hand-engineered features and learned representations direct.", indent=True)
+    R.h2("3.7 Empirical Pass-Interaction and Non-Additivity Analysis")
+    R.para(
+        "Because all 2⁶ = 64 combinations are timed for every program, the dataset forms a complete 6-factor "
+        "factorial design replicated across 900 programs. That allows us to measure each pass's exact "
+        "marginal effect across all 2⁵ = 32 contexts of the other five passes, prove quantitatively that "
+        "pass speedups are non-additive (off by >10% on 680/900 programs), and benchmark zero-run ML "
+        "recommendation directly against multi-run greedy search on the real clock.", indent=True)
 
     # ===================================================================== 4
     R.h1("4. Proposed Work")
@@ -887,9 +1013,12 @@ def write_body(R):
     R.para(
         "Figure 1 shows the end-to-end pipeline. A MiniC source file passes through the front end into "
         "three-address code, from which the control-flow graph and the 27 features are computed. At compile "
-        "time the recommender scores all 64 pass combinations from those features and selects one; the "
-        "pass manager applies it; the code generator emits C, which is compiled with `gcc -O0`. Offline, the "
-        "same pipeline runs every program at every combination to produce the training data.", indent=True)
+        "time the 2 MB Histogram Gradient Boosting recommender scores all 64 pass combinations from those "
+        "features and selects one (or abstains to combination 0 if no combination exceeds the ×1.05 threshold); "
+        "the pass manager applies the selected passes deterministically to a fixed point; the code generator "
+        "emits C99, which is compiled with `gcc -O0`. Offline, the same pipeline runs every program at every "
+        "combination to produce the training dataset, performance analysis (`PERF_ANALYSIS.md`) and "
+        "interactive results page (`docs/results.html`).", indent=True)
     R.figure(F("fig_pipeline.png"), "End-to-end architecture of the MiniC optimiser and recommender", 6.2)
     R.h2("4.2 The MiniC Language")
     R.para(
@@ -971,8 +1100,8 @@ def write_body(R):
                                                     "loop into a labelled pre-header."],
         ["16", "Strength reduction (SR)", "Replaces `i * k` for an induction variable `i` with an "
                                           "accumulator updated by `+ k` each iteration."],
-        ["32", "Loop unrolling (LU)", "Replicates a counted loop body four times and keeps the original loop "
-                                      "as a remainder loop."],
+        ["32", "Loop unrolling (LU)", "Replicates a counted loop body four times under a guard and keeps "
+                                      "the original loop as a remainder loop."],
     ], "Summary of the optimisation passes", widths=[0.45, 1.85, 3.97], align=["c", "l", "l"])
     R.para(
         "Passes enable each other. On the running example, strength reduction alone does nothing because "
@@ -990,13 +1119,32 @@ def write_body(R):
     R.figure(F("term_licm.png"), "Combination 9 (CF + LICM) on licm_arith: invariant products folded "
                                  "and hoisted", 5.6)
     R.figure(F("term_unroll.png"), "Combination 32 (LU): four-way unrolled loop with remainder loop", 5.6)
-    R.h2("4.7 Pass Manager")
+    R.h2("4.7 Pass Manager, Fixed-Point Iteration and Determinism")
     R.para(
         "The pass manager (`optimizer/pass_manager.py`) applies the enabled passes in the canonical order "
         "**CF → CSE → LU → LICM → SR → DCE** and repeats the whole sequence until the program stops changing "
         "(a fixed point). Iteration lets each pass clean up after the others: for example, DCE removes the "
         "temporaries that CSE and SR leave unused, and CF can fold expressions that LICM has just hoisted. "
-        "The order is fixed so that the 64 combinations are a clean pass-_selection_ problem.", indent=True)
+        "The order is fixed so that the 64 combinations define a clean pass-_selection_ problem.", indent=True)
+    R.para(
+        "Two subtle multi-pass engineering bugs discovered during the Review-3 audit were resolved in the "
+        "pass manager and loop unroller (`optimizer/loop_unroll.py`):", indent=True)
+    R.bullets([
+        "**Preventing duplicate remainder-loop unrolling under LU + LICM:** When LU unrolls a loop, it emits "
+        "an unroll prologue (`L_unroll_*`) whose guard exits into the original loop (`head_label`) as the "
+        "0..3-iteration remainder handler. When LICM runs after LU in the same fixed-point round, it can "
+        "insert a pre-header (`L_licm_pre_*`) between the unroll guard's exit and `head_label`. In the next "
+        "fixed-point round, `_already_unrolled()` previously checked only whether `L_unroll_*` jumped "
+        "directly to `head_label`, failed to recognise the remainder loop, and unrolled the remainder loop "
+        "a second time (dead code, since at most 3 iterations reach it, but doubling code size). "
+        "`_already_unrolled()` now walks forward through straight-line pre-header instructions from the "
+        "guard's exit target to `head_label`, guaranteeing every loop is unrolled at most once.",
+        "**Process-deterministic temporary allocation:** Loop unrolling previously collected body temporaries "
+        "into a Python `set` before renaming them for each of the four copies. Because Python randomises "
+        "`PYTHONHASHSEED` per process, temporary numbering in the emitted TAC and C varied from run to run. "
+        "Replacing set iteration with a program-order `_TempAllocator` makes the compiler strictly "
+        "deterministic across processes.",
+    ])
     R.h2("4.8 Value-Semantics Code Generation")
     R.para(
         "The C emitter (`codegen/c_emitter.py`) produces C99 that any GCC can compile. To keep MiniC's copy "
@@ -1005,18 +1153,21 @@ def write_body(R):
         "emitted in dependency order. Figure 9 shows part of the output for `canonical_example.mc`, the "
         "program that exercises every language feature.", indent=True)
     R.figure(F("term_emitc.png"), "Generated value-semantics C for canonical_example.mc (combo 63, excerpt)", 5.6)
-    R.h2("4.9 Measurement Methodology")
+    R.h2("4.9 Measurement Methodology and Noise Analysis")
     R.para(
         "The harness (`harness/`) compiles each emitted C file with `gcc -O0 -std=c99` and runs the binary "
-        "after four warm-up runs, keeping the **minimum of 15** wall-clock runs. The sweep runs eight "
-        "programs in parallel; the minimum is the least-interfered sample under that load. The speedup of "
-        "combination _c_ for program _p_ is defined as",
-        indent=True)
+        "after four warm-up runs, keeping the **minimum of 15** wall-clock runs. Unoptimised run times "
+        "across the 900 programs span 5.6–210.5 ms (median 12.1 ms). The speedup of combination _c_ for "
+        "program _p_ is defined as", indent=True)
     R.code(["speedup(p, c) = time(p, combo 0) / time(p, c)          (> 1 means faster)"], size=10)
     R.para(
         "Before a timing is recorded, the binary's exit code must equal that of combination 0 (the "
-        "correctness gate). The full sweep of 900 programs took 3 hours 20 minutes on eight workers.",
-        indent=True)
+        "correctness gate). The full sweep of 900 programs (57,600 builds) took 3 hours 20 minutes on eight "
+        "parallel workers. Because eight workers run simultaneously, OS scheduling and cache contention add "
+        "positive upward skew to individual timings: across all 57,600 configurations (`PERF_ANALYSIS.md`), "
+        "the ratio `median_time_ms / min_time_ms` has a **median of 1.102** and a **95th percentile of "
+        "1.411** (10–40% interference on the median). Recording the minimum of 15 runs after 4 warm-ups "
+        "isolates the least-interfered hardware execution time.", indent=True)
     R.h2("4.10 Benchmark Corpus")
     R.para(
         "The corpus contains 30 hand-written programs in five categories and 870 programs produced by a "
@@ -1037,12 +1188,12 @@ def write_body(R):
         ["Total", "", "900", "57,600 (program, combination) measurements"],
     ], "Composition of the 900-program benchmark corpus", widths=[1.05, 2.0, 0.8, 2.42],
         align=["l", "l", "c", "l"])
-    R.h2("4.11 Learning Formulation")
+    R.h2("4.11 Learning Formulation and Size-Aware Selection")
     R.para(
         "Each (program, combination) pair is one training row: the 27 features of the program, the 6 bits "
         "of the combination, and the measured speedup as the regression target. A regressor _f_ therefore "
         "predicts the speedup of any combination for any program. For a new program the recommender "
-        "evaluates all 64 combinations and applies the selection rule",
+        "evaluates all 64 combinations and applies the risk-aware selection rule",
         indent=True)
     R.code([
         "c* = argmax_c f(x_p, c)",
@@ -1055,8 +1206,12 @@ def write_body(R):
         "[11]. Each was combined with plain argmax, with margins m ∈ {0.03, 0.05, 0.08, 0.12, 0.18}, and a "
         "per-pass classifier alternative. Every strategy was scored by 5-fold GroupKFold on: the mean true "
         "speedup of the recommended combination; the fraction of the oracle's gain it captures; and the "
-        "fraction of programs it makes more than 2% slower. The winner is the strategy with the highest "
-        "useful gain whose regression rate is at most 10%.", indent=True)
+        "fraction of programs it makes more than 2% slower. Among strategies whose regression rate is at "
+        "most 10%, held-out speedups within **0.01×** are within timing noise and are treated as a tie, "
+        "preferring the compact **Histogram Gradient Boosting** model (**2 MB** on disk, vs. **613 MB** for "
+        "Random Forest). If `data/trained_model.pkl` is absent on a fresh clone or was saved by a different "
+        "`scikit-learn` version, `ml/predictor.py` automatically trains this 2 MB HistGBT model from "
+        "`data/benchmark_dataset.csv` on first use (~15 seconds).", indent=True)
     R.h2("4.12 Model Comparison Design")
     R.para(
         "To test whether learned program representations can replace engineered features, eight models were "
@@ -1082,70 +1237,102 @@ def write_body(R):
     R.h1("5. Implementation & Screenshots")
     R.h2("5.1 Technology Stack and Environment")
     R.table(["Component", "Technology"], [
-        ["Compiler, harness, ML", "Python 3.13.15 (≈ 9,300 lines including tests)"],
-        ["C compiler", "GCC 16.2.0 (WinLibs MinGW-w64, UCRT), always at -O0 for measurement"],
-        ["Classical ML", "scikit-learn 1.9.1, NumPy 2.5.4, pandas 3.0.6"],
-        ["Neural models", "PyTorch 2.14.1 (CPU)"],
-        ["Web playground", "Flask 3.1.3 with a single-page HTML/JavaScript front end"],
-        ["Plots & report", "Matplotlib 3.11.2, python-docx"],
-        ["Testing", "pytest 9.1.1"],
+        ["Compiler, harness, ML, CLI", "Python 3.13 / 3.14 (≈ 10,000 lines including tests and UI templates)"],
+        ["C compiler", "GCC 16.2.0 (WinLibs MinGW-w64, UCRT), pinned at `-O0 -std=c99` for measurement"],
+        ["Classical ML", "scikit-learn 1.9, NumPy 2.5, pandas 3.0 (`requirements.txt`)"],
+        ["Neural models (optional)", "PyTorch 2.14 CPU (`requirements-models.txt`, only for `--compare-models`)"],
+        ["Web playground & results", "Flask 3.1.3 single-page app + interactive HTML/SVG dashboard (`docs/results.html`)"],
+        ["Plots & report generation", "Matplotlib 3.11, python-docx, pypdf, LibreOffice headless"],
+        ["Testing", "pytest 9.1.1 (51 test functions + sub-tests, `--quick` marker support)"],
         ["Platform", "Windows 11, 16 logical CPUs, sweep on 8 parallel workers"],
-    ], "Implementation technology and experimental environment", widths=[1.8, 4.47])
+    ], "Implementation technology and experimental environment", widths=[1.9, 4.37])
     R.h2("5.2 Repository Structure")
     R.code([
+        "minic.py          single unified entry point (check, compile, recommend, benchmark,",
+        "                  playground, results, analyze, experiment, test [--quick])",
         "src/minic/",
-        "  frontend/   lexer.py  parser.py  ast_nodes.py  sema.py",
-        "  ir/         tac.py  ir_generator.py  cfg.py",
-        "  features/   extractor.py (19 structural)  opportunity.py (8 opportunity)",
-        "  optimizer/  constant_folding.py  dce.py  cse.py  licm.py",
-        "              strength_reduction.py  loop_unroll.py  pass_manager.py",
-        "  codegen/    c_emitter.py",
-        "  harness/    compiler.py  timer.py  sweeper.py  gen_corpus.py  report.py",
-        "  ml/         dataset.py  model.py  train.py  predictor.py",
-        "              sequences.py  models_torch.py  models_compare.py",
-        "  driver.py   command-line compiler",
-        "demo/         cli.py (recommend | benchmark)   app.py (browser playground)",
-        "benchmarks/   30 hand-written programs + generated/ (870 programs)",
-        "tests/        pytest suite: front end, IR, every pass, 64-combo sweeps, harness, ML",
-        "run_experiment.py   sweep → dataset → strategy bake-off → train → RESULTS.md",
+        "  frontend/       lexer.py  parser.py  ast_nodes.py  sema.py",
+        "  ir/             tac.py  ir_generator.py  cfg.py",
+        "  features/       extractor.py (19 structural)  opportunity.py (8 opportunity)",
+        "  optimizer/      constant_folding.py  dce.py  cse.py  licm.py",
+        "                  strength_reduction.py  loop_unroll.py  pass_manager.py",
+        "  codegen/        c_emitter.py",
+        "  harness/        compiler.py  timer.py  sweeper.py  gen_corpus.py",
+        "                  report.py  perf_analysis.py  gen_resultspage.py",
+        "  ml/             dataset.py  model.py  train.py  predictor.py",
+        "                  sequences.py  models_torch.py  models_compare.py",
+        "  driver.py       command-line compiler",
+        "demo/             cli.py (recommend | benchmark)   app.py + static/index.html",
+        "benchmarks/       30 hand-written programs + generated/ (870 programs)",
+        "data/             benchmark_dataset.csv (57,600 rows)  results_summary.json",
+        "docs/             results.html  results_template.html  WALKTHROUGH.md  spec/",
+        "reports/          course reports (Review 1, Review 2, Review 3 / Final) + generators",
+        "tests/            51 pytest tests (front end, IR, passes, determinism, harness, ML)",
     ])
-    R.h2("5.3 Running the System")
-    R.code([
-        "pip install -r requirements.txt",
-        "python -m src.minic.driver prog.mc --tac --features      # inspect TAC and features",
-        "python -m src.minic.driver prog.mc --optimize 63 --run   # optimise, compile, run",
-        "python -m demo.cli recommend prog.mc --verify            # ML pick + measured speedup",
-        "python -m demo.app                                       # playground, port 5005",
-        "python run_experiment.py --compare-models                # full experiment",
-    ])
-    R.h2("5.4 Screenshots")
+    R.h2("5.3 Unified Entry Point (minic.py) and Running the System")
     R.para(
-        "The browser playground (`demo/app.py`) runs the whole pipeline interactively: the user edits a "
-        "MiniC program, the server compiles it unoptimised and optimised, times both builds, checks that "
-        "they return the same value and shows the speedup, a per-pass report and a side-by-side TAC diff. "
-        "Figures 10–12 show the struct-distance example.", indent=True)
-    R.figure(S("run1/image_370.png"), "Playground, TAC diff tab: struct-distance program before (combo 0) "
-                                      "and after (combo 63)", 5.3)
-    R.figure(S("run1/image_371.png"), "Playground, Optimization tab: passes applied, per-pass effect and "
-                                      "the static features read by the model", 5.3)
-    R.figure(S("run1/image_372.png"), "Playground, Result tab: ×2.52 speedup (190.57 ms → 75.49 ms); "
-                                      "both builds return 130", 5.3)
+        "To ensure a clean out-of-the-box experience on a fresh clone, all workflows are consolidated under "
+        "a single root script, `minic.py` (Table 7). Running `python minic.py check` verifies the Python "
+        "version, required packages, `gcc` availability on `PATH`, the 57,600-row dataset, and the trained "
+        "model, and then compiles and executes `canonical_example.mc` at `--optimize 63` as a smoke test "
+        "(Figure 10).", indent=True)
+    R.table(["Command (python minic.py ...)", "Action"], [
+        ["`check`", "Verifies Python, packages, `gcc` and dataset; runs an end-to-end compile+run smoke test."],
+        ["`compile FILE.mc [--optimize 0..63] [--run]`", "Compiles a MiniC file; prints AST/TAC/CFG/features/C or runs via `gcc`."],
+        ["`recommend FILE.mc [--verify]`", "Predicts the best pass combo (auto-trains 2 MB HistGBT on first use) and times it."],
+        ["`benchmark FILE.mc`", "Times the program with each pass alone, all passes on, and `gcc -O2`."],
+        ["`playground [--port PORT]`", "Launches the interactive browser playground on `http://127.0.0.1:5005`."],
+        ["`results [--recompute]`", "Rebuilds the interactive `docs/results.html` dashboard and opens it."],
+        ["`analyze`", "Computes per-pass marginal effects, non-additivity and noise into `PERF_ANALYSIS.md`."],
+        ["`experiment [--full] [--compare-models]`", "Runs the strategy bake-off, trains the model, and writes `RESULTS.md`."],
+        ["`test [--quick]`", "Runs the full pytest suite or skips the 6 slow 64-combination sweep tests."],
+    ], "Subcommands provided by the unified minic.py entry point", widths=[2.55, 3.72])
+    if os.path.exists(F("term_check.png")):
+        R.figure(F("term_check.png"), "Self-verification and smoke test via python minic.py check", 5.6)
+
+    R.h2("5.4 Screenshots: Redesigned Playground, CLI and Visual Results Page")
     R.para(
-        "Figures 13–15 show the loop-invariant arithmetic example. Unrolling and LICM replace the six "
-        "multiplications in the loop body with additions of folded constants, and the optimised `-O0` build "
-        "runs ×1.93 faster than the unoptimised one — faster, in this case, than GCC's own `-O2` build of "
-        "the unoptimised C.", indent=True)
-    R.figure(S("run2/image_373.png"), "Playground, TAC diff tab: loop-invariant arithmetic program", 5.3)
-    R.figure(S("run2/image_374.png"), "Playground, Optimization tab for the loop-invariant program", 5.3)
-    R.figure(S("run2/image_375.png"), "Playground, Result tab: ×1.93 speedup (200.64 ms → 104.10 ms)", 5.3)
+        "The browser playground (`demo/app.py`, `demo/static/index.html`) was completely redesigned for "
+        "Review-3 into four focused views: **Result**, **Why this combo**, **What the passes did**, and "
+        "**Code before / after**. While a build runs, a live stage tracker shows progress. Once complete, "
+        "the **Result** tab displays the measured speedup, a **time-saved ring**, interactive switches for "
+        "the six passes, and a visual **build race** that animates the unoptimised `-O0`, ML-optimised `-O0`, "
+        "and reference `gcc -O2` builds at their real relative speeds alongside every individual timing "
+        "sample (Figure 11). The **Why this combo** tab plots the model's predicted speedups for all 64 "
+        "combinations as a heatmap and lists detected static/opportunity features ahead of absent ones. "
+        "The **Code before / after** tab renders a **GitHub-style per-function unified TAC diff** with "
+        "changed functions first and unchanged regions folded (Figure 12).", indent=True)
+    if os.path.exists(I("playground.jpg")):
+        R.figure(I("playground.jpg"), "Redesigned browser playground (Result tab): ×1.84 speedup, 46% time-saved "
+                                      "ring, interactive pass switches, and live build race", 5.5)
+    if os.path.exists(I("playground-diff.jpg")):
+        R.figure(I("playground-diff.jpg"), "Redesigned browser playground (Code before / after tab): GitHub-style "
+                                           "per-function unified TAC diff showing unrolled prologue and LICM pre-header", 5.5)
     R.para(
-        "The command-line tool reports the model's recommendation for a program together with its top five "
-        "predicted combinations, and with `--verify` it builds and times the program to confirm the "
-        "prediction (Figure 16). Figure 17 shows the canonical example, which uses every MiniC feature, "
-        "returning its expected value 83 with all six passes enabled.", indent=True)
-    R.figure(F("term_recommend.png"), "Recommendation for licm_arith: predicted ×1.68, measured ×1.70 "
+        "Figures 13–14 show the rebuilt **interactive visual results page** (`docs/results.html`, generated "
+        "from `docs/results_template.html` and `data/results_summary.json` by `python minic.py results`), "
+        "which provides animated interactive charts of all 64 combinations, every benchmark program on a "
+        "log-scale scatter plot, program families, pass interactions, and an honest strategy comparison.",
+        indent=True)
+    if os.path.exists(I("results-hero.jpg")):
+        R.figure(I("results-hero.jpg"), "Interactive visual results dashboard (docs/results.html): hero summary of "
+                                        "the 57,600 timed builds", 5.5)
+    if os.path.exists(I("results-charts.jpg")):
+        R.figure(I("results-charts.jpg"), "Interactive visual results dashboard (docs/results.html): per-program "
+                                          "log-scale scatter (Best combo vs. ML pick toggle) and speedup distribution", 5.5)
+    R.para(
+        "Figures 15–20 show detailed multi-tab runs of the struct-distance (`×2.52` speedup, returning 130) "
+        "and loop-invariant arithmetic (`×1.93` speedup) benchmarks, and Figures 21–22 show the CLI "
+        "`recommend --verify` and `compile --run` outputs.", indent=True)
+    R.figure(S("run1/image_370.png"), "Struct-distance benchmark: TAC diff before (combo 0) and after (combo 63)", 5.1)
+    R.figure(S("run1/image_371.png"), "Struct-distance benchmark: passes applied, per-pass effect and static features", 5.1)
+    R.figure(S("run1/image_372.png"), "Struct-distance benchmark: ×2.52 speedup (190.57 ms → 75.49 ms); both return 130", 5.1)
+    R.figure(S("run2/image_373.png"), "Loop-invariant arithmetic benchmark: TAC diff view", 5.1)
+    R.figure(S("run2/image_374.png"), "Loop-invariant arithmetic benchmark: per-pass breakdown and feature inspection", 5.1)
+    R.figure(S("run2/image_375.png"), "Loop-invariant arithmetic benchmark: ×1.93 speedup (200.64 ms → 104.10 ms)", 5.1)
+    R.figure(F("term_recommend.png"), "CLI recommendation for licm_arith: predicted ×1.68, measured ×1.70 "
                                       "(168.92 ms → 99.62 ms)", 5.6)
-    R.figure(F("term_run.png"), "canonical_example.mc optimised with all passes still returns 83", 5.2)
+    R.figure(F("term_run.png"), "canonical_example.mc optimised with all six passes returns expected exit code 83", 5.2)
 
     # ---- results
     R.h2("5.5 Experimental Results")
@@ -1153,14 +1340,16 @@ def write_body(R):
     R.table(["Measure", "Value"], [
         ["Programs × combinations", "900 × 64 = 57,600 timed configurations"],
         ["Configurations failing the correctness gate", "0"],
-        ["Best combination per program (oracle), geometric mean", "**×1.31**   (maximum ×4.37, complex_arith)"],
-        ["All six passes on (combo 63), geometric mean", "×1.19"],
-        ["Programs where all-on is not the best (>2% behind)", "715 / 900"],
-        ["Programs made >2% slower by all-on", "112 / 900"],
-        ["Fixed non-empty combination that never regresses >3%", "none — only combo 0 is safe"],
-    ], "Headline results of the 900-program sweep", widths=[3.6, 2.67])
+        ["Unoptimised runtime per program (combo 0)", "5.6 ms – 210.5 ms (median 12.1 ms)"],
+        ["Best combination per program (oracle)", "**×1.31 geomean** / **×1.33 mean** (max **×4.37**, `complex_arith`)"],
+        ["All six passes on (combo 63)", "×1.19 geomean / ×1.22 mean (worst case **2.3× slower** than combo 0)"],
+        ["Programs where all-on is not the best (>2% behind)", "715 / 900 (79.4%)"],
+        ["Programs made >2% slower by all-on", "112 / 900 (12.4%)"],
+        ["Share of all non-empty configs that regress >2%", "25% (14,175+ configurations)"],
+        ["Fixed non-empty combination that never regresses >3%", "none — only combo 0 is universally safe"],
+    ], "Headline results of the 900-program sweep", widths=[3.4, 2.87])
     R.para(
-        "The optimiser helps almost every program, but by very different amounts (Figure 18). About 39% of "
+        "The optimiser helps almost every program, but by very different amounts (Figure 23). About 39% of "
         "programs gain less than ×1.2 from even their best combination, while 127 gain more than ×1.6.",
         indent=True)
     R.figure(F("fig_hist.png"), "Distribution of the best-combination speedup over 900 programs", 5.0)
@@ -1169,47 +1358,108 @@ def write_body(R):
         "Struct-heavy programs benefit most (×2.70 geomean): value semantics make the unoptimised code copy "
         "and re-load struct fields repeatedly, and CSE, LICM and DCE remove most of that work. Loop-dominated "
         "programs follow at ×1.75. Recursive programs gain least (×1.13), because their cost lies in calls, "
-        "which the intra-procedural passes do not touch (Figure 19).", indent=True)
+        "which the intra-procedural passes do not touch (Figure 24).", indent=True)
     R.figure(F("fig_category.png"), "Geometric-mean speedup by category, best combination vs all passes", 5.3)
     R.h3("5.5.3 No single combination is best")
     R.para(
-        "Figure 20 compares, for every program, the speedup of enabling everything with the speedup of the "
+        "Figure 25 compares, for every program, the speedup of enabling everything with the speedup of the "
         "best combination. Points on the diagonal are programs for which all-on is optimal; most programs "
         "lie well above it, and 112 lie left of the dashed line, where all-on is slower than doing nothing. "
-        "Figure 21 shows that no pass belongs to every program's best combination, and Figure 22 lists the "
+        "Figure 26 shows that no pass belongs to every program's best combination, and Figure 27 lists the "
         "programs with the largest gains.", indent=True)
     R.figure(F("fig_scatter.png"), "All-on speedup vs best-combination speedup, one point per program", 4.6)
     R.figure(F("fig_passfreq.png"), "Share of programs whose best combination includes each pass", 4.0)
     R.figure(F("fig_top.png"), "The fifteen programs with the largest speedups", 5.2)
-    R.h3("5.5.4 The recommender")
+
+    R.h3("5.5.4 Per-pass marginal effects, non-additivity and search cost")
     R.para(
-        "The strategy bake-off selected a **Random Forest with an abstain margin of 0.05**: a combination is "
-        "recommended only if its predicted speedup exceeds ×1.05. On held-out programs it achieves a mean "
-        "speedup of **×1.21** against ×1.33 for the oracle, capturing **63%** of the achievable gain, while "
-        "**9%** of its recommendations slow the program down; the speedup-prediction mean absolute error is "
-        "0.105 (Figure 23, Table 8). Histogram Gradient Boosting was within 0.01 of it.", indent=True)
-    R.figure(F("fig_reco.png"), "Held-out performance of the recommender compared with fixed policies", 4.6)
-    R.table(["Strategy", "Model", "Reco. speedup", "Capture", "Regressions"], [
-        ["argmax", "HistGradient Boosting", "×1.21", "63%", "14%"],
-        ["argmax", "Random Forest", "×1.21", "64%", "12%"],
-        ["per-pass classifiers", "HistGB classifier", "×1.22", "65%", "11%"],
-        ["margin 0.03", "Random Forest", "×1.21", "64%", "10%"],
-        ["**margin 0.05 (selected)**", "**Random Forest**", "**×1.21**", "**63%**", "**9%**"],
-        ["margin 0.05", "HistGradient Boosting", "×1.21", "62%", "9%"],
-        ["margin 0.08", "HistGradient Boosting", "×1.20", "60%", "6%"],
-        ["margin 0.12", "Random Forest", "×1.20", "60%", "4%"],
-        ["margin 0.18", "HistGradient Boosting", "×1.18", "53%", "2%"],
+        "A central addition after Review-2 (`src/minic/harness/perf_analysis.py` → `PERF_ANALYSIS.md`) "
+        "exploits the full 2⁶ factorial structure of the 57,600 timed runs to separate each pass's "
+        "standalone effect from its effect in the presence of other passes (Table 9, Figure 28).",
+        indent=True)
+    R.table(["Pass", "Alone (geomean)", "Marginal (32 contexts)", "Context range", "Helps (>2%)", "Hurts (>2%)"], [
+        ["**CF** (Constant Folding)", "×1.043", "×1.042", "×1.006 – ×1.093", "45%", "5%"],
+        ["**DCE** (Dead-Code Elim.)", "×0.997", "×1.035", "×0.994 – ×1.104", "64%", "3%"],
+        ["**CSE** (Common Subexpr.)", "×1.034", "×1.055", "×1.010 – ×1.130", "63%", "4%"],
+        ["**LICM** (Loop-Invariant)", "×1.018", "×1.029", "×0.994 – ×1.050", "45%", "9%"],
+        ["**SR** (Strength Reduction)", "×0.983", "×0.995", "×0.975 – ×1.013", "16%", "25%"],
+        ["**LU** (Loop Unrolling)", "×1.021", "×1.034", "×1.019 – ×1.047", "35%", "17%"],
+    ], "Per-pass behaviour across 900 programs: alone vs. averaged over all 32 contexts of the other five passes",
+        widths=[1.75, 1.0, 1.15, 1.15, 0.61, 0.61], align=["l", "c", "c", "c", "c", "c"], size=9.5)
+    R.figure(F("fig_pass_marginal.png"), "Per-pass standalone vs. marginal speedup (left) and share of programs "
+                                         "helped vs. hurt (right)", 6.0)
+    R.para(
+        "Three findings stand out from Table 9:", indent=True)
+    R.bullets([
+        "**DCE is pure synergy:** Enabled alone, DCE gives **×0.997** because the front end emits almost no "
+        "dead code. Averaged over all 32 contexts of the other passes, however, DCE yields **×1.035** (and up "
+        "to **×1.104** in the best context), helping **64%** of programs and hurting only 3%, because it "
+        "removes the dead temporaries left behind by CF, CSE and SR.",
+        "**Pass effects are strongly super-additive:** Multiplying the six single-pass speedups predicts an "
+        "all-on geomean of **×1.099**, whereas the measured all-on geomean is **×1.190**. Per program, an "
+        "additive model is off by a median of **24%** and errs by more than 10% on **680 / 900** programs. "
+        "This proves empirically that per-pass additive cost models cannot capture pass interactions, and "
+        "justifies scoring whole `(program, combination)` pairs.",
+        "**SR and LU are high-variance passes:** Adding SR hurts 25% of programs (and helps 16%), while LU "
+        "hurts 17% (and helps 35%). Moreover, **25% of all non-empty configurations** across the corpus make "
+        "the program >2% slower than doing nothing.",
+    ])
+    R.para(
+        "Table 10 and Figure 29 compare the compile-time search cost (number of real hardware timing runs "
+        "required per unseen program) against the resulting speedup. Even a greedy forward search that "
+        "times an average of **16.4 builds per program** still misses the best combination by >2% on "
+        "**486 / 900** programs. The ML recommender requires **zero timing runs**.", indent=True)
+    R.table(["Strategy", "Timed runs / program", "Arithmetic mean speedup", "Geometric mean speedup", "Regressions (>2% slower)"], [
+        ["No passes (combo 0)", "1 (baseline)", "×1.000", "×1.000", "0%"],
+        ["All 6 passes (combo 63)", "1", "×1.222", "×1.190", "12.4% (worst: 2.3× slower)"],
+        ["**ML recommender (HistGBT, m=0.05)**", "**0**", "**×1.210**", "**×1.190**", "**9.0%**"],
+        ["Greedy forward search (real clock)", "16.4", "×1.280", "×1.253", "misses best on 486/900"],
+        ["Exhaustive search (oracle)", "64", "×1.333", "×1.305", "0%"],
+    ], "Search cost vs. speedup across the 900-program corpus",
+        widths=[2.05, 1.05, 1.05, 1.05, 1.07], align=["l", "c", "c", "c", "c"], size=9.5)
+    R.figure(F("fig_search_cost.png"), "Speedup vs. compile-time search cost across 900 programs", 5.6)
+
+    R.h3("5.5.5 The recommender and honest comparison with 'all passes on'")
+    R.para(
+        "With size-aware tie-breaking (treating held-out speedups within 0.01× as ties and preferring the "
+        "smaller model), the strategy bake-off selects **Histogram Gradient Boosting with an abstain margin "
+        "of 0.05**: a combination is recommended only if its predicted speedup exceeds ×1.05. On held-out "
+        "programs it achieves an arithmetic-mean speedup of **×1.21** against ×1.33 for the oracle, capturing "
+        "**62%** of the achievable gain, while **9%** of its recommendations slow the program down; the "
+        "speedup-prediction MAE is 0.105 and the serialised model is only **2.0 MB** (Figure 30, Table 11).",
+        indent=True)
+    R.para(
+        "Comparing the recommender with 'all six passes on' on the **same arithmetic-mean metric** shows "
+        "an important, honest result: all-on achieves **×1.222** arithmetic mean (×1.190 geomean) but slows "
+        "down **12.4%** of programs (and makes the worst program **2.3× slower** than no optimisation). "
+        "The ML recommender roughly matches all-on in average speed (**×1.21**) with zero timing runs while "
+        "reducing the regression rate by a quarter (from 12.4% to **9.0%**). The remaining gap to the ×1.33 "
+        "oracle reflects intricate multi-pass interactions that static counts only partially capture.",
+        indent=True)
+    R.figure(F("fig_reco.png"), "Held-out performance of the recommender compared with fixed policies on the "
+                                "same arithmetic-mean metric", 4.8)
+    R.table(["Strategy", "Model", "Model size", "Reco. speedup", "Capture", "Regressions"], [
+        ["argmax", "HistGradient Boosting", "2.0 MB", "×1.21", "63%", "14%"],
+        ["argmax", "Random Forest", "612.9 MB", "×1.21", "64%", "12%"],
+        ["per-pass classifiers", "HistGB classifier", "1.8 MB", "×1.22", "65%", "11%"],
+        ["margin 0.03", "HistGradient Boosting", "2.0 MB", "×1.21", "63%", "10%"],
+        ["**margin 0.05 (selected)**", "**HistGradient Boosting**", "**2.0 MB**", "**×1.21**", "**62%**", "**9%**"],
+        ["margin 0.05", "Random Forest", "612.9 MB", "×1.21", "63%", "9%"],
+        ["margin 0.08", "HistGradient Boosting", "2.0 MB", "×1.20", "60%", "6%"],
+        ["margin 0.12", "Random Forest", "612.9 MB", "×1.20", "60%", "4%"],
+        ["margin 0.18", "HistGradient Boosting", "2.0 MB", "×1.18", "53%", "2%"],
     ], "Selected rows of the cross-validated strategy bake-off (900 programs, 5 folds)",
-        widths=[1.75, 1.8, 1.0, 0.8, 0.92], align=["l", "l", "c", "c", "c"])
+        widths=[1.55, 1.55, 0.85, 0.85, 0.7, 0.77], align=["l", "l", "r", "c", "c", "c"], size=9.5)
     R.para(
-        "Figure 24 shows the trade-off the margin controls. Raising it lowers the regression rate steeply "
+        "Figure 31 shows the trade-off the margin controls. Raising it lowers the regression rate steeply "
         "while the captured gain falls only slowly, because most of the risky recommendations are those "
-        "with small predicted gains. The features the model relies on most are the multiplication count, "
-        "the estimated dynamic instruction count, the number of foldable constants, branch density, loop "
-        "body size and instruction density inside loops — precisely the properties that determine whether "
-        "CF, SR and LICM can pay off.", indent=True)
+        "with small predicted gains. The features the model relies on most are `multiplication_count`, "
+        "`opp_est_dyn_kilo_insts`, `opp_const_foldable`, `branch_density`, `opp_loop_body_insts` and "
+        "`instruction_density_in_loops` — precisely the properties that determine whether CF, SR and LICM "
+        "can pay off.", indent=True)
     R.figure(F("fig_margin.png"), "Effect of the abstain margin on regressions and captured gain", 6.0)
-    R.h3("5.5.5 Model comparison")
+
+    R.h3("5.5.6 Eight-model comparison")
     rows = [[m[0], m[1], f"×{m[2]:.3f}", f"{m[3]}%", f"{m[4]}%", f"{m[5]:.3f}", m[6]] for m in MODELS]
     rows[0] = [f"**{c}**" for c in rows[0]]
     R.table(["Model", "Input", "Reco.", "Capture", "Regress.", "MAE", "Size"], rows,
@@ -1217,10 +1467,10 @@ def write_body(R):
             widths=[1.65, 1.05, 0.7, 0.7, 0.7, 0.6, 0.87], align=["l", "l", "c", "c", "c", "c", "r"], size=9.5)
     R.para(
         "Histogram Gradient Boosting wins the comparison at ×1.209 and is also among the smallest models "
-        "(2 MB, 0.36 ms to score all 64 combinations). The Random Forest scores almost the same but its "
-        "serialised model is 613 MB. The most interesting result is the **1D-CNN**: reading only the raw "
-        "TAC tokens, with none of the engineered features, it reaches ×1.197, within 1% of the best "
-        "feature model (Figure 25).", indent=True)
+        "(2.0 MB, 0.36 ms to score all 64 combinations). The Random Forest scores almost the same (×1.206) "
+        "but its serialised model is 612.9 MB. The most interesting result is the **1D-CNN**: reading only "
+        "the raw TAC tokens, with none of the engineered features, it reaches ×1.197, within 1% of the best "
+        "feature model (Figure 32).", indent=True)
     R.figure(F("fig_models.png"), "Recommendation quality of the eight models, with and without the "
                                   "regression cap", 6.0)
     R.para(
@@ -1228,73 +1478,84 @@ def write_body(R):
         "picks regress. Its predicted speedups are poorly calibrated: the gains it predicts for good and bad "
         "choices are similar, so no margin can filter the bad ones without discarding almost all the good "
         "ones, and under the cap it collapses to ×1.035. The hybrid models and the MLP show the same "
-        "behaviour, which points to a training problem (calibration and data volume) rather than a lack of "
-        "signal in their inputs.", indent=True)
-    R.h3("5.5.6 Comparison with Review-1")
-    R.table(["Measure", "Review-1 (270 programs)", "Final (900 programs)"], [
-        ["Timed configurations", "17,280", "57,600"],
-        ["Oracle geomean speedup", "×1.50", "×1.31"],
-        ["All-on geomean speedup", "×1.21", "×1.19"],
-        ["All-on not best", "243 / 270", "715 / 900"],
-        ["Recommender held-out speedup", "×1.23 (HistGBT, margin 0.12)", "×1.21 (Random Forest, margin 0.05)"],
-        ["Captured oracle gain", "44%", "63%"],
-        ["Regressions (recommender / argmax)", "9% / 21%", "9% / 12%"],
-        ["Models compared", "3 tree ensembles", "8 (incl. CNN, GRU, hybrids)"],
-    ], "Results at Review-1 and in the final evaluation", widths=[2.3, 1.95, 2.02], align=["l", "c", "c"])
-    R.para(
-        "The oracle speedup fell because the 870 generated programs include branch-heavy, nested-loop and "
-        "recursive patterns where the passes have less to work with; the larger corpus is more "
-        "representative. On it, the recommender captures a much larger share of the available gain (63% "
-        "against 44%) with the same 9% regression rate, which shows the value of the additional training "
-        "data.", indent=True)
+        "behaviour, which points to a calibration and data-volume bottleneck rather than a lack of signal "
+        "in their inputs.", indent=True)
+
+    R.h3("5.5.7 Progression across Review-1, Review-2 and Review-3 (Final)")
+    R.table(["Aspect / Measure", "Review-1 (270 programs)", "Review-2 (900 programs)", "Review-3 / Final (900 programs)"], [
+        ["Timed configurations", "17,280", "57,600", "57,600 (+ factorial perf analysis)"],
+        ["Oracle speedup (geomean / mean)", "×1.50 / —", "×1.31 / ×1.33", "×1.31 / ×1.33 (max ×4.37)"],
+        ["All-on speedup (geomean / mean)", "×1.21 / —", "×1.19 / —", "×1.19 / ×1.22 (12.4% regress)"],
+        ["Selected production model", "HistGBT (`m=0.12`)", "Random Forest (`m=0.05`, 613 MB)", "**HistGBT (`m=0.05`, 2 MB, auto-trains)**"],
+        ["Held-out speedup / capture / regr.", "×1.23 / 44% / 9%", "×1.21 / 63% / 9%", "**×1.21 / 62% / 9%**"],
+        ["Models compared", "3 tree ensembles", "8 (incl. CNN, GRU, hybrids)", "8 (`torch` optional in `requirements-models.txt`)"],
+        ["Pass-interaction & noise study", "None", "None", "**`PERF_ANALYSIS.md`: marginal, non-additivity, greedy vs. oracle, noise**"],
+        ["Optimizer determinism & LU+LICM", "Initial 6 passes", "LU+LICM double-unrolled remainder; set hash order", "**Fixed LU+LICM remainder guard & deterministic temp allocation**"],
+        ["CLI & interactive UI", "Separate `-m` scripts; basic playground", "Separate `-m` scripts; basic playground", "**Unified `minic.py` CLI, redesigned playground & `docs/results.html`**"],
+    ], "Evolution of the project across Review-1, Review-2 and Review-3",
+        widths=[1.65, 1.35, 1.55, 1.72], align=["l", "c", "c", "c"], size=9.0)
+
     R.h2("5.6 Testing and Verification")
     R.para(
-        "Correctness is enforced at two levels. The pytest suite (49 tests plus 17 sub-tests) covers the "
-        "lexer, parser, semantic analyser, IR generator, features, each pass individually and in all 64 "
-        "combinations, regression cases for previously found miscompilations, nested aggregates, the timing "
-        "harness and the ML data plumbing; the full suite passes. In addition, every one of the 57,600 "
-        "builds in the experiment had to reproduce the unoptimised program's return value. Figure 26 shows "
-        "the fast part of the suite.", indent=True)
-    R.figure(F("term_pytest.png"), "Verbose run of the fast (non-compiling) part of the test suite: 25 tests pass", 5.6)
+        "Correctness is enforced at two levels. The pytest suite (**51 test functions** plus 17 sub-tests) "
+        "covers the lexer, parser, semantic analyser, IR generator, features, each pass individually and in "
+        "all 64 combinations, regression cases for previously found miscompilations, nested aggregates, the "
+        "timing harness and the ML data plumbing. Two new tests added for Review-3 verify the compiler fixes: "
+        "`test_lu_with_licm_unrolls_only_once` confirms that running LU + LICM to a fixed point never "
+        "unrolls the remainder loop a second time, and `test_output_is_deterministic_across_processes` "
+        "spawns three sub-processes with `PYTHONHASHSEED` set to 1, 2 and 3 and checks that the emitted TAC "
+        "and C are byte-for-byte identical. In addition, every one of the 57,600 builds in the experiment "
+        "reproduced the unoptimised program's return value. Figure 33 shows the fast test suite (`python "
+        "minic.py test --quick`).", indent=True)
+    R.figure(F("term_pytest.png"), "Fast test suite (python minic.py test --quick): 30 unit, determinism and "
+                                   "ML plumbing tests pass", 5.6)
 
     # ===================================================================== 6
     R.h1("6. Conclusion", new_page=False)
     R.h2("6.1 Summary")
     R.para(
         "This project delivered a complete optimising compiler for MiniC — front end, three-address IR, "
-        "control-flow analysis, six provably sound optimisation passes with a fixed-point pass manager, and "
-        "a value-semantics C back end — together with a measurement harness, a 900-program benchmark corpus, "
-        "a machine-learning pass recommender, a command-line tool and a browser playground.", indent=True)
+        "control-flow analysis, six provably sound and deterministic optimisation passes with a fixed-point "
+        "pass manager, and a value-semantics C back end — together with a 57,600-run measurement harness, a "
+        "900-program benchmark corpus, a full factorial pass-interaction and non-additivity analysis, a "
+        "2 MB auto-training Histogram Gradient Boosting pass recommender, an eight-model classical/neural "
+        "comparison, a unified `minic.py` CLI, a redesigned browser playground, and an interactive visual "
+        "results dashboard.", indent=True)
     R.h2("6.2 Key Findings")
     R.bullets([
-        "Pass selection matters and is program-specific: the best combination gives ×1.31 on average and up "
-        "to ×4.37, but enabling everything is sub-optimal for 79% of programs and harmful for 12%.",
-        "Every fixed non-empty combination slows at least one program down, so a per-program decision is "
-        "required to be both fast and safe.",
-        "A Random Forest over 27 static features, with an abstain margin, achieves ×1.21 on unseen programs "
-        "and captures 63% of the achievable gain with only 9% regressions.",
-        "Risk control is as important as accuracy: the abstain margin cut regressions from 12% to 9% at "
-        "almost no cost in speedup.",
-        "Tree ensembles over engineered features perform best, but a CNN over the raw TAC sequence comes "
-        "within 1% of them, showing that useful program representations can be learned directly from IR.",
+        "Pass selection matters and is program-specific: the best combination gives ×1.31 geomean (×1.33 "
+        "mean) and up to ×4.37, whereas enabling everything is sub-optimal for 79% of programs, harmful for "
+        "12.4%, and up to 2.3× slower on the worst program.",
+        "Pass effects are strongly non-additive: multiplying single-pass speedups predicts ×1.099 vs. the "
+        "measured ×1.190 all-on geomean, erring by >10% on 680 of the 900 programs. Passes such as DCE "
+        "(×0.997 alone vs. ×1.035 marginally, helping 64% of programs) derive their value almost entirely "
+        "from cleaning up after other passes.",
+        "Blind or greedy search is expensive and risky: 25% of all non-empty configurations regress >2%, "
+        "and even a 16.4-run greedy search on the real clock misses the best combination on 486/900 programs.",
+        "A 2 MB Histogram Gradient Boosting recommender with an abstain margin of 0.05 achieves ×1.21 mean "
+        "speedup on unseen programs with zero timing runs — roughly matching all-on in speed while cutting "
+        "regressions from 12.4% to 9.0% and reducing model size by 300× compared with a Random Forest.",
+        "Tree ensembles over engineered features perform best under the 10% regression cap (×1.209), while "
+        "a 1D-CNN reading only the raw TAC token sequence comes within 1% of them (×1.197).",
     ])
     R.h2("6.3 Limitations")
     R.bullets([
         "Speedups are measured with `gcc -O0` to isolate the project's passes; the gains on top of an "
-        "optimising C compiler would be smaller.",
-        "All timings come from one machine; absolute speedups depend on the processor and memory system.",
-        "The passes are intra-procedural and their order is fixed, so recursive programs and phase ordering "
-        "are only partly addressed.",
-        "The generated programs, although varied, follow known patterns and may be easier to predict than "
-        "arbitrary real-world code.",
-        "The selected Random Forest is large (613 MB serialised); the comparison shows a 2 MB gradient "
-        "boosting model performs at least as well.",
+        "already-optimising C compiler (`-O2`) would be smaller.",
+        "On the same arithmetic-mean metric, the zero-run recommender (×1.21, 9% regressions) makes "
+        "compilation safer than enabling all passes (×1.22, 12.4% regressions), but does not yet beat "
+        "all-on in raw mean speed; capturing the remaining gap to the ×1.33 oracle requires richer "
+        "interaction features.",
+        "All timings come from one Windows 11 machine; absolute speedups depend on the processor and OS load.",
+        "The passes are intra-procedural and their canonical order is fixed, so recursive programs and "
+        "phase ordering are only partly addressed.",
     ])
     R.h2("6.4 Future Work")
     R.bullets([
-        "Ship Histogram Gradient Boosting as the default recommender for its size and speed.",
+        "Add pairwise pass-interaction features (e.g. how many SR opportunities appear only after CF) so "
+        "the regressor can close more of the gap between ×1.21 and the ×1.33 oracle.",
         "Calibrate the sequence models (for example with quantile or ranking losses) so that the GRU's "
-        "uncapped advantage can be used safely.",
+        "strong uncapped advantage (×1.222, 67% capture) survives the 10% regression cap.",
         "Treat pass ordering as a sequential decision problem and apply reinforcement learning, as in "
         "CompilerGym and AutoPhase [4], [5].",
         "Add inter-procedural optimisation, in particular function inlining, to help recursive and "
@@ -1306,13 +1567,16 @@ def write_body(R):
     # ===================================================================== 7
     R.h1("7. Project Repository Link", new_page=False)
     R.para("The complete source code, benchmark corpus, measured dataset, trained-model pipeline, "
-           "results and this report's generator are available at:", indent=False)
+           "performance analysis, interactive results page and this report's generator are available at:",
+           indent=False)
     p = R.para("**https://github.com/AkineHime/AI-based-compiler-optimization**",
                align=WD_ALIGN_PARAGRAPH.CENTER)
     p.paragraph_format.space_after = Pt(12)
-    R.para("Key files: `RESULTS.md` (measured results), `MODEL_COMPARISON.md` (eight-model comparison), "
-           "`docs/WALKTHROUGH.md` (one program traced through every stage), `docs/results.html` (visual "
-           "report) and `run_experiment.py` (reproduces the whole experiment).")
+    R.para("Key files: `minic.py` (unified entry point), `RESULTS.md` (measured results), `PERF_ANALYSIS.md` "
+           "(per-pass marginal effects, non-additivity, search cost and noise), `MODEL_COMPARISON.md` "
+           "(eight-model comparison), `docs/WALKTHROUGH.md` (one program traced through every stage), "
+           "`docs/results.html` (interactive visual report) and `run_experiment.py` (reproduces the whole "
+           "experiment).")
 
     # ===================================================================== refs
     R.h1("References", new_page=False)
@@ -1358,8 +1622,8 @@ MEMBERS = [("24BCT0301", "Ashmit Verma"), ("24BAI0243", "S Karthik Sudharsan"),
            ("23BCE2091", "Mohammed Nadeem")]
 
 
-def build(pages=None, out=OUT):
-    R = Report(TEMPLATE)
+def build(pages=None, out=OUT_R3):
+    R = Report(_resolve_template())
     R.title_page("AI-Based Compiler Optimization for MiniC",
                  "Static-Feature-Driven Pass Selection Using Machine Learning", MEMBERS, "November 2026")
     R.page_numbers()
@@ -1367,14 +1631,25 @@ def build(pages=None, out=OUT):
     R.contents(pages)
     write_body(R)
     R.save(out)
+    if os.path.abspath(out) != os.path.abspath(OUT):
+        shutil.copyfile(out, OUT)
     return R
+
+
+def _extract_pdf_pages(pdf_path):
+    try:
+        import pymupdf
+        doc = pymupdf.open(pdf_path)
+        return [" ".join(pg.get_text().split()) for pg in doc]
+    except ImportError:
+        import pypdf
+        reader = pypdf.PdfReader(pdf_path)
+        return [" ".join((pg.extract_text() or "").split()) for pg in reader.pages]
 
 
 def find_pages(pdf_path, R):
     """Page number (1-based, as printed in the footer) of every heading, figure and table."""
-    import pymupdf
-    doc = pymupdf.open(pdf_path)
-    texts = [" ".join(pg.get_text().split()) for pg in doc]
+    texts = _extract_pdf_pages(pdf_path)
     start = next(i for i, t in enumerate(texts) if "1. Abstract" in t and "TABLE OF CONTENTS" not in t
                  and "LIST OF" not in t)
     pages = {}
@@ -1386,12 +1661,13 @@ def find_pages(pdf_path, R):
         return None
 
     for level, text in R.heads:
-        pages[("h", text)] = first(" ".join(text.split()))
+        q = " ".join(text.split())
+        pages[("h", text)] = first(q) or first(q.split("(")[0].strip())
     for n, cap in R.figs:
         pages[("f", n)] = first(f"Figure {n}:")
     for n, cap in R.tabs:
         pages[("t", n)] = first(f"Table {n}:")
-    return pages, len(doc)
+    return pages, len(texts)
 
 
 def to_pdf(docx_path):
@@ -1407,6 +1683,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-figures", action="store_true")
     ap.add_argument("--no-pdf", action="store_true", help="skip the LibreOffice page-number pass")
+    ap.add_argument("--from-pdf", default=None, help="use an already-rendered PDF to populate TOC page numbers")
     args = ap.parse_args()
     if not args.no_figures:
         figures()
@@ -1418,17 +1695,26 @@ def main():
     TABLE_LIST[:] = R.tabs
     # pass 2: same layout with placeholder page numbers -> render -> real numbers
     build()
-    if args.no_pdf:
-        print("wrote", OUT, "(contents page numbers are placeholders)")
+    if args.from_pdf:
+        pages, n = find_pages(args.from_pdf, R)
+        missing = [k for k, v in pages.items() if v is None]
+        if missing:
+            print("WARNING: not found in PDF:", missing[:5])
+        build(pages)
+        print(f"wrote {OUT_R3}\nwrote {OUT}  (TOC populated from {args.from_pdf}, {n} pages)")
         return
-    pages, n = find_pages(to_pdf(OUT), R)
+    if args.no_pdf:
+        print(f"wrote {OUT_R3}\nwrote {OUT}  (contents page numbers are placeholders)")
+        return
+    pdf_path = to_pdf(OUT_R3)
+    pages, n = find_pages(pdf_path, R)
     missing = [k for k, v in pages.items() if v is None]
     if missing:
         print("WARNING: not found in PDF:", missing[:5])
     build(pages)
-    pdf = to_pdf(OUT)
-    import pymupdf
-    print(f"wrote {OUT}\nwrote {pdf}  ({len(pymupdf.open(pdf))} pages)")
+    pdf = to_pdf(OUT_R3)
+    shutil.copyfile(pdf, os.path.splitext(OUT)[0] + ".pdf")
+    print(f"wrote {OUT_R3}\nwrote {OUT}\nwrote {pdf}  ({n} pages)")
 
 
 if __name__ == "__main__":
